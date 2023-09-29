@@ -1,0 +1,16 @@
+__pycache__/
+.ipynb_checkpoints/
+x86_64/
+*.dll
+*.o
+*.c
+*.pt
+*.pth
+*.mat
+*.pkl
+*.png
+*.jpg
+*.npy
+*.zip
+/ecephys_cache_dir/
+/tutorial notebook/
