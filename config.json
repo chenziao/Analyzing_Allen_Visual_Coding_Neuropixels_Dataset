@@ -1,0 +1,13 @@
+{
+	"cache_dir": "./ecephys_cache_dir/",
+	"output_dir": "./output",
+	"filter_dict": {
+		"session_type": "brain_observatory_1.1",
+		"full_genotype": "Pvalb-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt",
+		"ecephys_structure_acronyms": "VISp"
+	},
+	"analysis_object": {
+		"session_id": 721123822,
+		"ecephys_structure_acronym": "VISp"
+	}
+}

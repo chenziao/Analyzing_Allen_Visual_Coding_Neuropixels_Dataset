@@ -12,5 +12,6 @@ x86_64/
 *.jpg
 *.npy
 *.zip
-/ecephys_cache_dir/
 /tutorial notebook/
+/ecephys_cache_dir/
+/output/
