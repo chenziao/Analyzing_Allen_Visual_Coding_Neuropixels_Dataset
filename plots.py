@@ -1,6 +1,4 @@
 import numpy as np
-import pandas as pd
-import xarray as xr
 import scipy as sp
 import matplotlib.pyplot as plt
 
@@ -78,10 +76,10 @@ def aling_axes_limits(axes):
             if i != j:
                 ax.set_ylim(lims[i])
 
-def unit_traits(pca_df, plv):
+def unit_traits(pca_df, plv, figsize=(6, 4)):
     """Plot principal components, phase locking value and mean firing rate of each unit"""
     n_units = len(pca_df)
-    _, ax = plt.subplots(1, 1, figsize=(6, 4))
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
     ax.bar(range(n_units), pca_df['projection_on_top_PCs'])
     ax.set_xlim(-1, n_units)
     ax.set_xlabel('units')
@@ -99,4 +97,4 @@ def unit_traits(pca_df, plv):
     ax2.set_ylabel('mean_firing_rate', color='r')
     ax2.tick_params(axis ='y', labelcolor='r')
     ax2.legend(loc='upper right', framealpha=0.2)
-    plt.show()
+    return fig, ax

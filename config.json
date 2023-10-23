@@ -1,6 +1,7 @@
 {
 	"cache_dir": "./ecephys_cache_dir/",
 	"output_dir": "./output",
+	"figure_dir": "./output/figures",
 	"filter_dict": {
 		"session_type": "brain_observatory_1.1",
 		"full_genotype": "Pvalb-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt",
@@ -9,5 +10,11 @@
 	"analysis_object": {
 		"session_id": 721123822,
 		"ecephys_structure_acronym": "VISp"
-	}
+	},
+	"save_figure": true,
+	"figure_format": "png",
+	"savefig_kwargs": {
+		"transparent": true
+	},
+	"enter_parameters": true
 }

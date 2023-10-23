@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import xarray as xr
 import scipy as sp
 import matplotlib.pyplot as plt
@@ -50,7 +49,6 @@ def fit_fooof(f, pxx, aperiodic_mode='fixed', dB_threshold=3., max_n_peaks=10,
         ax.xaxis.label.set_size('medium')
         ax.yaxis.label.set_size('medium')
         ax.tick_params(labelsize='medium')
-        plt.show()
     return results, fm
 
 def trial_psd(aligned_lfp, tseg=1.):
@@ -73,8 +71,10 @@ def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 10
     plt.plot(psd_avg_plt.frequency, psd_avg_plt.PSD.T, label=psd_avg_plt.channel.values)
     plt.xlim(plt_range)
     plt.yscale('log')
-    plt.legend(loc='upper right', framealpha=0.2)
-    plt.show()
+    plt.legend(loc='upper right', framealpha=0.2, title='channel ID')
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Power')
+    fig1 = plt.gcf()
 
     if channel_id is None:
         channel_id = lfp_array.channel[0]
@@ -84,7 +84,8 @@ def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 10
                         aperiodic_mode=aperiodic_mode, dB_threshold=dB_threshold, max_n_peaks=max_n_peaks,
                         freq_range=freq_range, peak_width_limits=None, report=True,
                         plot=True, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize)
-    return results
+    fig2 = plt.gcf()
+    return results, fig1, fig2
 
 def cwt_spectrogram(x, fs, nNotes=6, nOctaves=np.inf, freq_range=(0, np.inf),
                     bandwidth=1.0, axis=-1, detrend=False, normalize=False):
@@ -219,7 +220,6 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), plt_
                              plt_range=plt_range, clr_freq_range=clr_freq_range, ax=ax)
         ax.set_title(f'channel {channel: d}')
     plt.tight_layout()
-    plt.show()
     return axs
 
 def preprocess_firing_rate(units_fr, sigma, soft_normalize_cut, units_mean_fr=None):
