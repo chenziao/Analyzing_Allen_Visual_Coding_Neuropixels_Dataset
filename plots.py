@@ -20,7 +20,7 @@ def lighten(val, clr, light_scale=0.7, dark_scale=0.6):
         clr1, clr2 = clr1[None, :], clr2[None, :]
     return (1 - val) * clr1 + val * clr2
 
-def get_lighten_cmap(clr, N=16, light_scale=0.7, dark_scale=0.6, revert=False):
+def get_lighten_cmap(clr, N=16, light_scale=0.2, dark_scale=0.8, revert=False):
     """Get colormap with varying lightness of a given color"""
     value = np.linspace(1, 0, N) if revert else np.linspace(0, 1, N)
     return LinearSegmentedColormap.from_list('lighten', lighten(value, clr, light_scale, dark_scale))

@@ -41,6 +41,14 @@ def figure_display_function(config, session_id=None, ecephys_structure_acronym=N
     return disp_func
 
 def get_parameters(default_params, params_dict, enter_parameters=False):
+    """Enter parameters and overwrite the parameter dictionary.
+    default_params: a dictionary of default parameter {parameter: value}.
+    params_dict: parameter dictionary {parameter: value} to store selected parameters.
+        If a parameter already exists in `params_dict`, it will be used as default.
+    enter_parameters: If true, enter parameter value. Default value is used if nothing entered.
+        If false, return value from the `params_dict` if exists, otherwise from `default_params`.
+    Return: tuple of selected values for parameters in `default_params`.
+    """
     default_params = {key: params_dict.get(key, value) for key, value in default_params.items()}
     if enter_parameters:
         print('Enter parameters:')
@@ -51,3 +59,16 @@ def get_parameters(default_params, params_dict, enter_parameters=False):
                 default_params[key] = list(p) if type(p) is tuple else p
     params_dict.update(default_params)
     return tuple(default_params.values())
+
+def redo_condition(enter_parameters=True):
+    """Return a function that determines whether or not to reselect parameters and redo a process"""
+    if enter_parameters:
+        def whether_redo(*args, **kwargs):
+            """Enter decision"""
+            s = input('Continue with the selected parameter [y/n]?')
+            return s and s[0].lower() == 'n'
+    else:
+        def whether_redo(*args, **kwargs):
+            """Always skip redo"""
+            return False
+    return whether_redo
