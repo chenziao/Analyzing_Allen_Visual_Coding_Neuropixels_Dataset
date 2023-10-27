@@ -76,16 +76,24 @@ parameters_dict = info['parameters']
 fig_disp = figure_display_function(config)
 
 
-# ## Get units in area of interest
+# ## Load selected units in area of interest
 
 # In[6]:
 
 
-# units in a session after quality filter
-units = session.units
-sel_units = units[units['ecephys_structure_acronym'] == ecephys_structure_acronym]
+units_file = os.path.join(output_dir, f'session_{session_id:d}_{ecephys_structure_acronym:s}_units.csv')
+sel_units = pd.read_csv(units_file, index_col='unit_id')
 sel_units_id = sel_units.index
 print(f'Number of units in {ecephys_structure_acronym:s}: {len(sel_units):d}')
+
+
+# In[41]:
+
+
+if info['unit_has_ccf']:
+    units_dv_coords = sel_units['dorsal_ventral_ccf_coordinate'].copy()
+else:
+    units_dv_coords = sel_units['dorsal_ventral_ccf_coordinate'].rename('dorsal_ventral_coordinate')
 
 
 # ## Load LFP channels
@@ -94,7 +102,8 @@ print(f'Number of units in {ecephys_structure_acronym:s}: {len(sel_units):d}')
 
 
 filepath = os.path.join(probe_dir, f'{ecephys_structure_acronym:s}_lfp_channel_groups.nc')
-lfp_array = xr.open_dataset(filepath)
+with xr.open_dataset(filepath) as f:
+    lfp_array = f.load()
 lfp_array = lfp_array.assign_attrs(fs=info['fs']).rename(group_id='channel')
 display(lfp_array)
 
@@ -103,7 +112,6 @@ display(lfp_array)
 
 
 channel_group_map = pd.read_csv(filepath.replace('.nc', '.csv'), index_col='id')
-group_dv_ccf = dict(zip(channel_group_map['group_id'], channel_group_map['dorsal_ventral_ccf_coordinate']))
 display(channel_group_map)
 
 
@@ -131,9 +139,8 @@ orientation_group_df = pd.read_csv(filepath_prefix + '_pca_orient_groups.csv',
 
 # Get map from unit to channel group id
 channels = session.channels.loc[session.channels['structure_acronym'] == ecephys_structure_acronym]
-probe_channel_number_to_id = {row['probe_channel_number']: i for i, row in channels.iterrows()}
-unit_channel = pd.Series({i: channel_group_map.loc[probe_channel_number_to_id[u['probe_channel_number']], 'group_id']
-                          for i, u in sel_units.iterrows()}, index=sel_units_id, name='channel_group_id')
+unit_channel = pd.Series(channel_group_map.loc[sel_units['peak_channel_id'], 'group_id'].values,
+                         index=sel_units_id, name='channel_group_id')
 
 
 # In[11]:
@@ -157,7 +164,7 @@ spike_times = session.presentationwise_spike_times(stimulus_presentation_ids=gra
 
 # ### Beta wave
 
-# In[13]:
+# In[12]:
 
 
 # Get filtered LFP
@@ -171,10 +178,10 @@ spike_phase = get_spike_phase(spike_times, lfp_beta, unit_channel)
 
 # #### Calculate entrainment
 
-# In[14]:
+# In[13]:
 
 
-temp_freq_idx = tuple(range(condition_id.temporal_frequency.size))
+temp_freq_idx = list(range(condition_id.temporal_frequency.size))
 temp_freq_idx, = get_parameters({'select_temporal_frequency_index': temp_freq_idx}, parameters_dict, False)
 
 sel_tfreq = condition_id.temporal_frequency[temp_freq_idx]
@@ -187,7 +194,7 @@ print(sel_cond.orientation.to_series().to_string(index=False))
 print(sel_cond.temporal_frequency.to_series().to_string(index=False))
 
 
-# In[15]:
+# In[14]:
 
 
 fig1, _ = unit_traits(pca_df, plv)
@@ -197,7 +204,7 @@ unit_properties = pd.DataFrame({df.name: df for df in [
     plv.mean_firing_rate.to_series(),
     plv.PLV_unbiased.to_series(),
     plv.phase.to_series(),
-    sel_units['dorsal_ventral_ccf_coordinate'],
+    units_dv_coords,
     unit_channel
 ]}, index=sel_units_id)
 
@@ -211,7 +218,7 @@ fig_disp({'unit_traits': fig1, 'units_pair_plot': fig2})
 
 # #### Select orientation groups
 
-# In[16]:
+# In[15]:
 
 
 display(orientation_group_df)
@@ -226,7 +233,7 @@ for grp, orient_grp in orientation_group_df.iterrows():
         plv_orient.mean_firing_rate.to_series(),
         plv_orient.PLV_unbiased.to_series(),
         plv_orient.phase.to_series(),
-        sel_units['dorsal_ventral_ccf_coordinate'],
+        units_dv_coords,
         unit_channel
     ]}, index=sel_units_id)
 
@@ -238,7 +245,7 @@ for grp, orient_grp in orientation_group_df.iterrows():
 
 # ### Population activity vs. beta power
 
-# In[17]:
+# In[16]:
 
 
 n_orient = pop_vec_cond.orientation.size
@@ -247,7 +254,7 @@ cmap1 = plt.cm.get_cmap('hsv')(np.arange(n_orient) / n_orient)[:, :3]
 cmap2 = plt.cm.get_cmap('jet')(np.arange(n_tfreq) / n_tfreq)[:, :3]
 
 
-# In[19]:
+# In[17]:
 
 
 redo = True
@@ -289,12 +296,12 @@ while redo:
     redo = whether_redo()
 
 
-# In[22]:
+# In[18]:
 
 
 redo = True
 while redo:
-    temp_freq_idx = tuple(range(condition_id.temporal_frequency.size))
+    temp_freq_idx = list(range(condition_id.temporal_frequency.size))
     PC_disp = [0, 1]
     temp_freq_idx, PC_disp = get_parameters({
         'display_temporal_frequency_index': temp_freq_idx,
@@ -332,7 +339,7 @@ while redo:
 
 # ### Gamma wave
 
-# In[ ]:
+# In[19]:
 
 
 # # Get filtered LFP
@@ -350,7 +357,7 @@ while redo:
 
 # #### Calculate entrainment
 
-# In[ ]:
+# In[20]:
 
 
 # temp_freq_idx = slice(4)
@@ -365,7 +372,7 @@ while redo:
 # print(sel_cond.temporal_frequency.to_series().to_string(index=False))
 
 
-# In[ ]:
+# In[21]:
 
 
 # fig1, _ = unit_traits(pca_df, plv_gamma)
@@ -374,7 +381,7 @@ while redo:
 #     pca_df['projection_on_top_PCs'],
 #     plv_gamma.mean_firing_rate.to_series(),
 #     plv_gamma.PLV_unbiased.to_series(),
-#     sel_units['dorsal_ventral_ccf_coordinate'],
+#     units_dv_coords,
 #     unit_channel
 # ]}, index=sel_units_id)
 
@@ -388,7 +395,7 @@ while redo:
 
 # ## Save parameters in config
 
-# In[23]:
+# In[22]:
 
 
 with open(info_file, 'w') as f:

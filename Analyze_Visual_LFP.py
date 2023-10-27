@@ -80,7 +80,8 @@ fig_disp = figure_display_function(config)
 
 
 filepath = os.path.join(probe_dir, f'{ecephys_structure_acronym:s}_lfp_channel_groups.nc')
-lfp_array = xr.open_dataset(filepath)
+with xr.open_dataset(filepath) as f:
+    lfp_array = f.load()
 lfp_array = lfp_array.assign_attrs(fs=info['fs']).rename(group_id='channel')
 display(lfp_array)
 

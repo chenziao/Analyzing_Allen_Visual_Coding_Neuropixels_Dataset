@@ -77,6 +77,8 @@ session_id = int(input('Select session ID: '))
 
 
 session = cache.get_session_data(session_id)
+channels = session.channels
+channels = channels.loc[channels['structure_acronym'] == ecephys_structure_acronym].copy()
 
 
 # ## Get units in area of interest
@@ -107,7 +109,7 @@ for i, x in probes.iterrows():
 # In[11]:
 
 
-sel_units = VI_units[VI_units['ecephys_structure_acronym'] == ecephys_structure_acronym]
+sel_units = VI_units[VI_units['ecephys_structure_acronym'] == ecephys_structure_acronym].copy()
 if len(sel_units) == 0:
     raise SystemExit(f'No unit found in {ecephys_structure_acronym}.')
 
@@ -130,50 +132,56 @@ if len(sel_units) == 0:
 # In[13]:
 
 
-# units center
 ccf_coords = ['anterior_posterior_ccf_coordinate', 'dorsal_ventral_ccf_coordinate', 'left_right_ccf_coordinate']
+has_ccf = not np.any(channels[ccf_coords].isnull()) # whether ccf is missing
+unit_has_ccf = not np.any(sel_units[ccf_coords].isnull()) # whether ccf is missing for units
+
+if not has_ccf:
+    # use probe coordinate to represent ccf
+    channels[ccf_coords] = 0.
+    channels['dorsal_ventral_ccf_coordinate'] = 3840. - channels['probe_vertical_position']
+
+if not unit_has_ccf:
+    # use channel coordinate to represent ccf
+    sel_units[ccf_coords] = channels.loc[sel_units['peak_channel_id'], ccf_coords].values
+
+
+# In[14]:
+
+
+# units center
 units_coord = sel_units[ccf_coords].values
 units_coord_mean = units_coord.mean(axis=0)
 center_unit_id = sel_units.index[np.argmin(np.sum((units_coord - units_coord_mean) ** 2, axis=1))]
 
 channel_index = sel_units.loc[center_unit_id, 'probe_channel_number']
-probe_id = sel_units.loc[center_unit_id, 'probe_id']
+center_unit_probe_id = sel_units.loc[center_unit_id, 'probe_id']
 
-channel = session.channels[(session.channels.probe_channel_number == channel_index) & 
-                           (session.channels.probe_id == probe_id)]
+channel = channels[(channels.probe_channel_number == channel_index) & (channels.probe_id == center_unit_probe_id)]
 center_unit_channel_id = int(channel.index[0])
 
 print('Channel of the unit near the center of units')
 display(channel)
 
 
-# In[14]:
-
-
-# channels center
-channels_coord = session.channels[ccf_coords].values
-center_channel_id = int(session.channels.index[np.argmin(np.sum((channels_coord - units_coord_mean) ** 2, axis=1))])
-
-print('Chennel near the center of units')
-display(session.channels.loc[[center_channel_id]])
-
-
 # In[15]:
 
 
 # channels center
-channels_coord = session.channels[ccf_coords].values
-center_channel_id = int(session.channels.index[np.argmin(np.sum((channels_coord - units_coord_mean) ** 2, axis=1))])
+if has_ccf:
+    channels_coord = channels[ccf_coords].values
+    center_channel_id = int(channels.index[np.argmin(np.sum((channels_coord - units_coord_mean) ** 2, axis=1))])
 
-print('Chennel near the center of units')
-display(session.channels.loc[[center_channel_id]])
+    print('Chennel near the center of units')
+    display(channels.loc[[center_channel_id]])
+else:
+    center_channel_id = None
+    print('Channels CCF missing.')
 
 
 # In[16]:
 
 
-channels = session.channels
-channels = channels.loc[channels['structure_acronym'] == ecephys_structure_acronym]
 probe_id = channels.probe_id.unique()
 print('Probes and channels in %s:' % ecephys_structure_acronym)
 for i in probe_id:
@@ -183,48 +191,127 @@ for i in probe_id:
 # In[17]:
 
 
-probe_id = int(input('Select probe: ') if probe_id.size > 1 else probe_id[0])
-
-
-# In[18]:
-
-
+probe_id = int(input(f'Select probe: (center unit probe {center_unit_probe_id})') if probe_id.size > 1 else probe_id[0])
+if not probes.loc[probe_id, 'has_lfp_data']:
+    raise SystemExit(f'Probe {i:d} does not have LFP data.')
 fs = probes.loc[probe_id, 'lfp_sampling_rate']
 
 
 # ## Save probe information
 
-# In[19]:
+# In[18]:
 
 
 output_dir = config['output_dir']
 session_dir = os.path.join(output_dir, f'session_{session_id:d}')
-
+units_file = os.path.join(output_dir, f'session_{session_id:d}_{ecephys_structure_acronym:s}_units.csv')
+info_file = os.path.join(output_dir, f'session_{session_id:d}_{ecephys_structure_acronym:s}.json')
 if not os.path.isdir(session_dir):
     os.makedirs(session_dir)
 
-info = {
-    'session_id': session_id,
-    'ecephys_structure_acronym': ecephys_structure_acronym,
-    'probe_id': probe_id,
-    'center_channel_id': center_channel_id,
-    'center_unit_channel_id': center_unit_channel_id,
-    'fs': fs,
-    'parameters': {}, # to be added in later analyses
-}
+if not os.path.isfile(units_file):
+    sel_units.to_csv(units_file)
 
-info_file = os.path.join(output_dir, f'session_{session_id:d}_{ecephys_structure_acronym:s}.json')
-with open(info_file, 'w') as f:
-    json.dump(info, f, indent=4)
+save_info = input('Save information file [y/n]?') if os.path.isfile(info_file) else 'y'
+save_info = save_info and save_info[0].lower() == 'y'
+if save_info:
+    info = {
+        'session_id': session_id,
+        'ecephys_structure_acronym': ecephys_structure_acronym,
+        'probe_id': probe_id,
+        'center_channel_id': center_channel_id,
+        'center_unit_channel_id': center_unit_channel_id,
+        'fs': fs,
+        'parameters': {}, # to be added in later analyses
+        'has_ccf': has_ccf,
+        'unit_has_ccf': unit_has_ccf,
+    }
+    with open(info_file, 'w') as f:
+        json.dump(info, f, indent=4)
+else:
+    with open(info_file) as f:
+        info = json.load(f)
+
+
+# ## Average channels in groups and save
+
+# In[19]:
+
+
+import xarray as xr
+import matplotlib.pyplot as plt
+import sklearn as sk
+
+whether_redo = redo_condition(True)
+fig_disp = figure_display_function(config, session_id=session_id, ecephys_structure_acronym=ecephys_structure_acronym)
 
 
 # In[20]:
 
 
-fig_disp = figure_display_function(config, session_id=session_id, ecephys_structure_acronym=ecephys_structure_acronym)
+redo = True
+while redo:
+    channel_group_by_ccf, = get_parameters({'channel_group_by_ccf': has_ccf}, info, enter_parameters=has_ccf)
+    if channel_group_by_ccf:
+        from sklearn.manifold import LocallyLinearEmbedding
+        from sklearn.cluster import KMeans
 
+        channel_coord = channels[ccf_coords].values
+        # reduce dimension to one
+        method = 'ltsa' # 'standard' 'hessian' 'ltsa' 'modified'
+        lle = LocallyLinearEmbedding(n_components=1, n_neighbors=6, method=method)
+        probe_coord = lle.fit_transform(channel_coord) # 1D coordinate of channels
+        probe_coord = sk.preprocessing.MinMaxScaler().fit_transform(probe_coord)
 
-# ## Average channels in groups and save
+        # find number of clusters in the channels
+        kmeans = KMeans(2, n_init=1)
+        jumps = kmeans.fit_predict(np.diff(np.sort(probe_coord, axis=0), axis=0))
+        n_group = np.sum(jumps == np.argmax(kmeans.cluster_centers_.ravel())) + 1
+
+        # divide channels into groups
+        kmeans = KMeans(n_group, n_init=1)
+        channel_group = kmeans.fit_predict(probe_coord)
+    else:
+        from sklearn.decomposition import PCA
+        
+        channel_coord = channels[['probe_horizontal_position', 'probe_vertical_position']].to_numpy(dtype=float, copy=True)
+        channel_coord[:, 1] = 3840. - channel_coord[:, 1]
+        print('Channels range: {:.0f} microns'.format(channel_coord[:, 1].max() - channel_coord[:, 1].min()))
+        n_group, = get_parameters({'n_channel_groups': 8}, info, enter_parameters=True)
+        pca = PCA(n_components=1)
+        probe_coord = pca.fit_transform(channel_coord)
+        probe_coord = sk.preprocessing.MinMaxScaler().fit_transform(probe_coord)
+
+        # divide channels into groups
+        sorted_probe_coord = np.sort(probe_coord.ravel())
+        increments = np.diff(sorted_probe_coord)
+        jumps = np.nonzero(increments > increments.mean())[0] + 1
+        cuts = np.round(np.linspace(0, probe_coord.size, n_group + 1))
+        cuts = jumps[pd.Index(jumps).get_indexer(cuts[1:-1], method='nearest')]
+        cut_coord = (sorted_probe_coord[cuts - 1] + sorted_probe_coord[cuts]) / 2
+        channel_group = np.searchsorted(cut_coord, probe_coord.ravel())
+
+    # group center coordinate
+    group_centers = np.zeros(n_group)
+    group_count = np.zeros(n_group)
+    for g, x in zip(channel_group, channel_coord[:, 1]):
+        group_centers[g] += x
+        group_count[g] += 1
+    group_centers /= group_count
+
+    # visualize channel groups
+    plt.figure(figsize=(5, 4))
+    for g, x in zip(channel_group, channel_coord[:, 1]):
+        plt.plot(group_centers[g], x, 'b.', markersize=2)
+    plt.xlabel('Group centers dorsal ventral coordinate')
+    plt.ylabel('Channels dorsal ventral coordinate')
+    fig_disp('channel_group_centers')
+
+    redo = whether_redo()
+
+if channel_group_by_ccf:
+    info['n_channel_groups'] = int(n_group)
+
 
 # In[21]:
 
@@ -234,54 +321,16 @@ if not os.path.isdir(probe_dir):
     os.makedirs(probe_dir)
 
 filepath = os.path.join(probe_dir, f'{ecephys_structure_acronym:s}_lfp_channel_groups.nc')
-channel_groups_exists = os.path.isfile(filepath)
+save_lfp = input('LFP channel group data already exists. Overwrite [y/n]?') if not save_info and os.path.isfile(info_file) else 'y'
+save_lfp = save_lfp and save_lfp[0].lower() == 'y'
 
 
 # In[22]:
 
 
-import xarray as xr
-import matplotlib.pyplot as plt
-import sklearn as sk
-from sklearn import manifold, cluster
-
-channel_coord = channels[ccf_coords].values
-
-# reduce dimension to one
-method = 'ltsa' # 'standard' 'hessian' 'ltsa' 'modified'
-lle = manifold.LocallyLinearEmbedding(n_components=1, n_neighbors=6, method=method)
-probe_coord = lle.fit_transform(channel_coord) # 1D coordinate of channels
-
-# find number of clusters in the channels
-probe_coord = sk.preprocessing.MinMaxScaler().fit_transform(probe_coord)
-kmeans = cluster.KMeans(2, n_init=1)
-jumps = kmeans.fit_predict(np.diff(np.sort(probe_coord, axis=0), axis=0))
-n_group = np.sum(jumps == np.argmax(kmeans.cluster_centers_.ravel())) + 1
-
-# divide channels into groups
-kmeans = cluster.KMeans(n_group, n_init=1)
-channel_group = kmeans.fit_predict(probe_coord)
-group_centers = kmeans.cluster_centers_.ravel()
-group_sort_id = np.argsort(group_centers)
-
-# visualize channel groups
-plt.figure(figsize=(5, 4))
-for g, x in zip(channel_group, probe_coord.ravel()):
-    plt.plot(group_centers[g], x, 'b.', markersize=2)
-plt.xlabel('Group centers (normalized coordinate)')
-plt.ylabel('Channels (normalized coordinate)')
-fig_disp('channel_group_centers')
-
-
-# In[23]:
-
-
-if not channel_groups_exists:
-    # Load LFP given probe
-    lfp_array = session.get_lfp(probe_id)
-    lfp_array = lfp_array.sel(channel=np.unique(lfp_array.channel.sel(channel=channels.index, method='nearest')))
-
+if save_lfp:
     # Compile groups of channels
+    group_sort_id = np.argsort(group_centers)
     channels_group_id = np.zeros(channel_group.size, dtype=int)
     channels_in_groups = {}
     group_ccf_coord = np.zeros((n_group, 3))
@@ -292,6 +341,10 @@ if not channel_groups_exists:
         channels_in_groups[i] = channels[idx].index.values
     channel_group_map = pd.DataFrame(channels_group_id, columns=['group_id'], index=channels.index)
     channel_group_map[ccf_coords] = group_ccf_coord[channels_group_id]
+
+    # Load LFP given probe
+    lfp_array = session.get_lfp(probe_id)
+    lfp_array = lfp_array.sel(channel=np.unique(lfp_array.channel.sel(channel=channels.index, method='nearest')))
     for g, c in channels_in_groups.items():
         channels_in_groups[g] = np.array([x for x in c if x in lfp_array.channel])
 
@@ -301,24 +354,29 @@ if not channel_groups_exists:
     group_lfp = xr.concat(group_lfp, dim=channel_group_ids).to_dataset(name='LFP')
     print(group_lfp)
 
-
-# In[24]:
-
-
-if not channel_groups_exists:
     group_lfp.to_netcdf(filepath) # save downsampled channels
     channel_group_map.to_csv(filepath.replace('.nc', '.csv'))
 
 
 # ## Save LFP of particular channel
 
-# In[25]:
+# In[23]:
 
 
 # channel_id = center_channel_id
 # lfp = session.get_lfp(probe_id).sel(channel=channel_id, method='nearest')
 # filepath = os.path.join(probe_dir, f'lfp_channel_{channel_id:d}.nc')
 # lfp.to_netcdf(filepath)
+
+
+# ## Save parameters in config
+
+# In[24]:
+
+
+if save_lfp:
+    with open(info_file, 'w') as f:
+        json.dump(info, f, indent=4)
 
 
 # In[ ]:

@@ -75,14 +75,13 @@ parameters_dict = info['parameters']
 fig_disp = figure_display_function(config)
 
 
-# ## Get units in area of interest
+# ## Load selected units in area of interest
 
 # In[6]:
 
 
-# units in a session after quality filter
-units = session.units
-sel_units = units[units['ecephys_structure_acronym'] == ecephys_structure_acronym]
+units_file = os.path.join(output_dir, f'session_{session_id:d}_{ecephys_structure_acronym:s}_units.csv')
+sel_units = pd.read_csv(units_file, index_col='unit_id')
 sel_units_id = sel_units.index
 print(f'Number of units in {ecephys_structure_acronym:s}: {len(sel_units):d}')
 
@@ -332,7 +331,7 @@ fig_disp({'projection_on_top_PC_components': fig1, 'projection_on_top_PCs': fig2
 
 redo = True
 while redo:
-    temp_freq_idx = tuple(range(condition_id.temporal_frequency.size))
+    temp_freq_idx = list(range(condition_id.temporal_frequency.size))
     stable_duration = (0.3, grating_duration)
     temp_freq_idx, stable_duration, PC_disp = get_parameters({
         'select_temporal_frequency_index': temp_freq_idx,
