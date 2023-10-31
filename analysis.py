@@ -222,19 +222,6 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), plt_
     plt.tight_layout()
     return axs
 
-def preprocess_firing_rate(units_fr, sigma, soft_normalize_cut, units_mean_fr=None):
-    """Smooth and normalize units firing rate"""
-    if units_mean_fr is None:
-        units_mean_fr = units_fr.units_mean_fr
-    axis = units_fr.spike_rate.dims.index('time_relative_to_stimulus_onset')
-    smoothed = sp.ndimage.gaussian_filter1d(units_fr.spike_rate - units_mean_fr,
-                                            sigma / units_fr.bin_width, axis=axis, mode='constant')
-    smoothed = units_fr.spike_rate.copy(data=smoothed) + units_mean_fr
-    units_fr = units_fr.assign(smoothed=smoothed)
-    normalized = smoothed / (units_mean_fr + soft_normalize_cut)
-    units_fr = units_fr.assign(normalized=normalized)
-    return units_fr
-
 def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None):
     """Filter LFP. Get amplitude and phase using Hilbert transform.
     extend_time: duration at the start and end to avoid boundary effect for filtering.

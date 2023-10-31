@@ -29,7 +29,7 @@ def figure_display_function(config, session_id=None, ecephys_structure_acronym=N
         kwargs = config['savefig_kwargs']
         kwargs.update(savefig_kwargs)
         def disp_func(figname):
-            if type(figname) is dict:
+            if isinstance(figname, dict):
                 for fname, fig in figname.items():
                     fig.savefig(os.path.join(figure_dir, fname + figure_format), **kwargs)
             else:
@@ -53,6 +53,8 @@ def get_parameters(default_params, params_dict, enter_parameters=False):
     if enter_parameters:
         print('Enter parameters:')
         for key, value in default_params.items():
+            if isinstance(value, str):
+                value = f'"{value}"'
             p = input(f'{key} (default: {value}) : ')
             if p != '':
                 p = eval(p)

@@ -87,7 +87,7 @@ sel_units_id = sel_units.index
 print(f'Number of units in {ecephys_structure_acronym:s}: {len(sel_units):d}')
 
 
-# In[41]:
+# In[7]:
 
 
 if info['unit_has_ccf']:
@@ -98,7 +98,7 @@ else:
 
 # ## Load LFP channels
 
-# In[7]:
+# In[8]:
 
 
 filepath = os.path.join(probe_dir, f'{ecephys_structure_acronym:s}_lfp_channel_groups.nc')
@@ -108,7 +108,7 @@ lfp_array = lfp_array.assign_attrs(fs=info['fs']).rename(group_id='channel')
 display(lfp_array)
 
 
-# In[8]:
+# In[9]:
 
 
 channel_group_map = pd.read_csv(filepath.replace('.nc', '.csv'), index_col='id')
@@ -117,7 +117,7 @@ display(channel_group_map)
 
 # ## Load PCA results
 
-# In[9]:
+# In[10]:
 
 
 stimulus_name = 'drifting_gratings'
@@ -134,7 +134,7 @@ orientation_group_df = pd.read_csv(filepath_prefix + '_pca_orient_groups.csv',
 
 # ### Preprocess
 
-# In[10]:
+# In[11]:
 
 
 # Get map from unit to channel group id
@@ -143,7 +143,7 @@ unit_channel = pd.Series(channel_group_map.loc[sel_units['peak_channel_id'], 'gr
                          index=sel_units_id, name='channel_group_id')
 
 
-# In[11]:
+# In[12]:
 
 
 # Get stimulus trials
@@ -164,7 +164,7 @@ spike_times = session.presentationwise_spike_times(stimulus_presentation_ids=gra
 
 # ### Beta wave
 
-# In[12]:
+# In[13]:
 
 
 # Get filtered LFP
@@ -178,7 +178,7 @@ spike_phase = get_spike_phase(spike_times, lfp_beta, unit_channel)
 
 # #### Calculate entrainment
 
-# In[13]:
+# In[14]:
 
 
 temp_freq_idx = list(range(condition_id.temporal_frequency.size))
@@ -194,18 +194,20 @@ print(sel_cond.orientation.to_series().to_string(index=False))
 print(sel_cond.temporal_frequency.to_series().to_string(index=False))
 
 
-# In[14]:
+# In[15]:
 
 
 fig1, _ = unit_traits(pca_df, plv)
 
 unit_properties = pd.DataFrame({df.name: df for df in [
     pca_df['projection_on_top_PCs'],
+    pca_df['firing_rate_range'],
     plv.mean_firing_rate.to_series(),
     plv.PLV_unbiased.to_series(),
     plv.phase.to_series(),
     units_dv_coords,
     unit_channel
+    
 ]}, index=sel_units_id)
 
 g = sns.pairplot(unit_properties, hue='channel_group_id', diag_kind='kde', height=2., aspect=1.1)
@@ -218,7 +220,7 @@ fig_disp({'unit_traits': fig1, 'units_pair_plot': fig2})
 
 # #### Select orientation groups
 
-# In[15]:
+# In[16]:
 
 
 display(orientation_group_df)
@@ -230,6 +232,7 @@ for grp, orient_grp in orientation_group_df.iterrows():
 
     unit_properties = pd.DataFrame({df.name: df for df in [
         pca_df[f'orientation_group_{grp:d}'],
+        pca_df['firing_rate_range'],
         plv_orient.mean_firing_rate.to_series(),
         plv_orient.PLV_unbiased.to_series(),
         plv_orient.phase.to_series(),
@@ -245,7 +248,7 @@ for grp, orient_grp in orientation_group_df.iterrows():
 
 # ### Population activity vs. beta power
 
-# In[16]:
+# In[17]:
 
 
 n_orient = pop_vec_cond.orientation.size
@@ -254,7 +257,7 @@ cmap1 = plt.cm.get_cmap('hsv')(np.arange(n_orient) / n_orient)[:, :3]
 cmap2 = plt.cm.get_cmap('jet')(np.arange(n_tfreq) / n_tfreq)[:, :3]
 
 
-# In[17]:
+# In[18]:
 
 
 redo = True
@@ -281,7 +284,7 @@ while redo:
     _, axs = plt.subplots(n_orient, 1, figsize=(5, 3 * n_orient))
     axs = axs.ravel()
     t_mid = (t[:-1] + t[1:]) / 2
-    for i, orient in enumerate(pop_vec_cond.orientation):
+    for i, orient in enumerate(pop_vec_cond.orientation.values):
         ax = axs[i]
         for j, tfreq in enumerate(pop_vec_cond.temporal_frequency):
             ax.plot(t_mid, beta_power.sel(orientation=orient, temporal_frequency=tfreq),
@@ -296,7 +299,7 @@ while redo:
     redo = whether_redo()
 
 
-# In[18]:
+# In[19]:
 
 
 redo = True
@@ -313,7 +316,7 @@ while redo:
     axs = axs.ravel()
     for i, orient in enumerate(pop_vec_cond.orientation):
         ax = axs[i]
-        for j, (tfreq_idx, tfreq) in enumerate(zip(temp_freq_idx, sel_tfreq)):
+        for j, (tfreq_idx, tfreq) in enumerate(zip(temp_freq_idx, sel_tfreq.values)):
             clr = cmap2[tfreq_idx]
             lighten_cmap = get_lighten_cmap(clr, light_scale=0.2, dark_scale=0.8, revert=True)
             pop_vec_tfreq = pop_vec_cond_pc.sel(PC=PC_disp, orientation=orient, temporal_frequency=tfreq)
@@ -339,7 +342,7 @@ while redo:
 
 # ### Gamma wave
 
-# In[19]:
+# In[20]:
 
 
 # # Get filtered LFP
@@ -357,7 +360,7 @@ while redo:
 
 # #### Calculate entrainment
 
-# In[20]:
+# In[21]:
 
 
 # temp_freq_idx = slice(4)
@@ -372,13 +375,14 @@ while redo:
 # print(sel_cond.temporal_frequency.to_series().to_string(index=False))
 
 
-# In[21]:
+# In[22]:
 
 
 # fig1, _ = unit_traits(pca_df, plv_gamma)
 
 # unit_properties = pd.DataFrame({df.name: df for df in [
 #     pca_df['projection_on_top_PCs'],
+#     pca_df['firing_rate_range'],
 #     plv_gamma.mean_firing_rate.to_series(),
 #     plv_gamma.PLV_unbiased.to_series(),
 #     units_dv_coords,
@@ -395,7 +399,7 @@ while redo:
 
 # ## Save parameters in config
 
-# In[22]:
+# In[23]:
 
 
 with open(info_file, 'w') as f:

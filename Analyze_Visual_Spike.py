@@ -106,35 +106,72 @@ units_fr = get_units_firing_rate(session, grating_ids, sel_units_id, condition_i
                                  bin_width=bin_width, window=(-0.5, grating_duration))
 
 
+# In[23]:
+
+
+spike_rate = units_fr.spike_rate.stack(sample=('condition_id', 'time_relative_to_stimulus_onset'))
+plt.figure(figsize=(8, 6))
+plt.subplot(2, 1, 1)
+plt.violinplot(spike_rate.values.T, widths=.9)
+plt.boxplot(spike_rate.values.T, widths=0.4, whis=(0, 100),
+            showmeans=True, meanline=True, showfliers=False, showcaps=False,
+            meanprops={'linestyle': '-'}, whiskerprops={'color':'none'})
+plt.xlabel('units')
+plt.ylabel('firing rate (Hz)')
+
+plt.subplot(2, 2, 3)
+plt.plot(units_fr.units_fr_mean, units_fr.units_fr_std, 'b.', label='std')
+plt.plot(units_fr.units_fr_mean, units_fr.units_fr_max, 'm.', marker='_', markersize=8, label='max')
+plt.plot(units_fr.units_fr_mean, units_fr.units_fr_range, 'r.', label='range')
+plt.xlabel('unit mean firing rate (Hz)')
+plt.ylabel('Hz')
+plt.legend(loc='upper left', framealpha=0.2)
+plt.subplot(2, 2, 4)
+plt.plot(units_fr.units_fr_range, units_fr.units_fr_std, 'b.', label='std')
+plt.plot(units_fr.units_fr_range, units_fr.units_fr_mean, 'r.', label='range')
+plt.xlabel('unit firing rate range (Hz)')
+plt.ylabel('Hz')
+plt.legend(loc='upper left', framealpha=0.2)
+
+plt.tight_layout()
+fig_disp('unit_firing_rate_statistics')
+
+
 # ### Preprocess units firing rate
 
-# In[8]:
+# In[9]:
 
 
 redo = True
 while redo:
     sigma = 0.02 # sec
     quantile = 0.2
-    sigma, quantile = get_parameters({'fr_smooth_sigma': sigma, 'fr_normalize_quantile': quantile}, parameters_dict, enter_parameters)
-    soft_normalize_cut = np.quantile(units_fr.units_mean_fr, quantile)
+    sigma, normalization_scale, quantile = get_parameters({
+        'fr_smooth_sigma': sigma,
+        'fr_normalization_scale': 'range', # 'range', 'std', 'mean'
+        'fr_normalize_quantile': quantile
+    }, parameters_dict, enter_parameters)
+    norm_scale = getattr(units_fr, 'units_fr_' + normalization_scale)
+    soft_normalize_cut = np.quantile(norm_scale, quantile)
     plt.figure(figsize=(6, 3))
-    plt.hist(units_fr.units_mean_fr, bins=20)
+    plt.hist(norm_scale, bins=30)
     plt.axvline(soft_normalize_cut, color='r', label='soft_normalize_cut')
-    plt.xlabel('Unit mean firing rate (Hz)')
+    plt.xlabel(f'Unit firing rate {normalization_scale:s} (Hz)')
     plt.ylabel('Count')
-    plt.show()
+    plt.legend(loc='upper right', framealpha=0.2)
+    fig_disp('unit_firing_rate_normalization_cutoff')
 
     redo = whether_redo()
 
 
-# In[9]:
+# In[10]:
 
 
 get_parameters({'soft_normalize_cut': soft_normalize_cut}, parameters_dict, False)
-units_fr = preprocess_firing_rate(units_fr, sigma, soft_normalize_cut)
+units_fr = preprocess_firing_rate(units_fr, sigma, soft_normalize_cut=soft_normalize_cut, normalization_scale=norm_scale)
 
 
-# In[10]:
+# In[11]:
 
 
 # Example condition activity
@@ -165,12 +202,12 @@ plt.show()
 
 # ## PCA analysis
 
-# In[11]:
+# In[12]:
 
 
 from sklearn.decomposition import PCA
 
-units_vec = units_fr.normalized.stack(sample=['condition_id', 'time_relative_to_stimulus_onset']).T
+units_vec = units_fr.normalized.stack(sample=('condition_id', 'time_relative_to_stimulus_onset')).T
 
 n_units = units_vec.unit_id.size
 n_components = n_units
@@ -193,7 +230,7 @@ fig_disp('PC_explained_variance')
 
 # ### Population trajectory during rising phase after stimulus
 
-# In[12]:
+# In[13]:
 
 
 pop_vec_cond = pop_vec.sel(condition_id=condition_id)
@@ -204,7 +241,7 @@ cmap1 = plt.cm.get_cmap('hsv')(np.arange(n_orient) / n_orient)[:, :3]
 cmap2 = plt.cm.get_cmap('jet')(np.arange(n_tfreq) / n_tfreq)[:, :3]
 
 
-# In[13]:
+# In[14]:
 
 
 redo = True
@@ -220,9 +257,9 @@ while redo:
     _, axs = plt.subplots(n_orient, 1, figsize=(5, 3 * n_orient))
     axs = axs.ravel()
     t = pop_vec_cond_pc.time_relative_to_stimulus_onset.values
-    for i, orient in enumerate(pop_vec_cond.orientation):
+    for i, orient in enumerate(pop_vec_cond.orientation.values):
         ax = axs[i]
-        for j, tfreq in enumerate(pop_vec_cond.temporal_frequency):
+        for j, tfreq in enumerate(pop_vec_cond.temporal_frequency.values):
             lighten_cmap = get_lighten_cmap(cmap2[j], light_scale=0.2, dark_scale=0.8)
             pop_vec_tfreq = pop_vec_cond_pc.sel(orientation=orient, temporal_frequency=tfreq)
             line = plot_multicolor_line(*pop_vec_tfreq, c=t, ax=ax, cmap=lighten_cmap, linewidth=2)
@@ -244,7 +281,7 @@ while redo:
     redo = whether_redo()
 
 
-# In[14]:
+# In[15]:
 
 
 # %matplotlib notebook
@@ -254,7 +291,7 @@ pop_vec_cond_pc = pop_vec_cond.sel(PC=PC3_axis, time_relative_to_stimulus_onset=
 t = pop_vec_cond_pc.time_relative_to_stimulus_onset.values
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(projection='3d')
-for i, orient in enumerate(pop_vec_cond_pc.orientation):
+for i, orient in enumerate(pop_vec_cond_pc.orientation.values):
     clr = cmap1[i]
     pop_vec_orient = pop_vec_cond_pc.sel(orientation=orient)
     pop_vec_tfreq = pop_vec_orient.mean(dim='temporal_frequency')
@@ -279,7 +316,7 @@ for coords, view_angle in view_angles.items():
     fig_disp({'population_rise_PC_3d_' + coords: fig})
 
 
-# In[15]:
+# In[16]:
 
 
 n_top_pc = 3
@@ -290,7 +327,9 @@ units_pc = np.sum(pca.components_[PC_top] ** 2, axis=0) ** 0.5
 
 pca_df = pd.DataFrame(
     {
-        'mean_firing_rate': units_fr.units_mean_fr,
+        'mean_firing_rate': units_fr.units_fr_mean,
+        'firing_rate_range': units_fr.units_fr_range,
+        'firing_rate_std': units_fr.units_fr_std,
         'projection_on_top_PCs': units_pc,
         **{f'PC_{p:d}_component': pca.components_[p] for p in PC_top}
     },
@@ -298,7 +337,7 @@ pca_df = pd.DataFrame(
 )
 
 
-# In[16]:
+# In[17]:
 
 
 fig1, axs = plt.subplots(n_top_pc, 1, figsize=(6, 2.5 * n_top_pc))
@@ -317,16 +356,22 @@ ax.set_xlim(-1, n_units)
 ax.set_xlabel('units')
 ax.set_ylabel('projection_on_top_PCs')
 ax2 = ax.twinx()
-ax2.plot(range(n_units), pca_df['mean_firing_rate'], color='r', linestyle='none', marker='_', markersize=8)
-ax2.set_ylabel('mean_firing_rate', color='r')
+ax2.plot(range(n_units), pca_df['firing_rate_range'], label='range',
+         color='r', linestyle='none', marker='_', markersize=8)
+ax2.plot(range(n_units), pca_df['mean_firing_rate'], label='mean',
+         color='r', linestyle='none', marker='o', markersize=5, markerfacecolor='none')
+ax2.plot(range(n_units), pca_df['firing_rate_std'], label='std',
+         color='r', linestyle='none', marker='d', markersize=5, markerfacecolor='none')
+ax2.set_ylabel('firing rate (Hz)', color='r')
 ax2.tick_params(axis ='y', labelcolor='r')
+ax2.legend(loc='upper right', framealpha=0.2)
 
 fig_disp({'projection_on_top_PC_components': fig1, 'projection_on_top_PCs': fig2})
 
 
 # ### Clustering orientations during stable phase after stimulus
 
-# In[17]:
+# In[18]:
 
 
 redo = True
@@ -343,16 +388,17 @@ while redo:
     print('Selected conditions:')
     print(sel_tfreq.to_series().to_string(index=False))
 
-    orient_pop_direction = pop_vec_cond.sel(
+    pop_vec_stable = pop_vec_cond.sel(
         temporal_frequency=sel_tfreq, time_relative_to_stimulus_onset=slice(*stable_duration)
-    ).mean(dim=['temporal_frequency', 'time_relative_to_stimulus_onset'])
+    )
+    orient_pop_direction = pop_vec_stable.mean(dim=('temporal_frequency', 'time_relative_to_stimulus_onset'))
 
     ts = np.linspace(0, 1, n_tfreq)
     _, ax = plt.subplots(1, 1, figsize=(5, 5))
     objs_leg = []
-    for i, orient in enumerate(pop_vec_cond.orientation):
+    for i, orient in enumerate(pop_vec_cond.orientation.values):
         pop_vec_orient = pop_vec_cond.sel(PC=PC_disp, orientation=orient, time_relative_to_stimulus_onset=slice(*stable_duration))
-        for j, tfreq in enumerate(sel_tfreq):
+        for j, tfreq in enumerate(sel_tfreq.values):
             clr = lighten(ts[j], cmap1[i])
             pop_vec_tfreq = pop_vec_orient.sel(temporal_frequency=tfreq)
             line = ax.plot(*pop_vec_tfreq, color=clr, linestyle='none', marker='.', markersize=5)
@@ -363,7 +409,7 @@ while redo:
         ax.set_ylabel(f'PC{PC_disp[1]:d}')
     leg1 = plt.legend(handles=objs_leg, title='frequency', loc='upper right', framealpha=0.2)
     objs_leg = []
-    for i, orient in enumerate(pop_vec_cond.orientation):
+    for i, orient in enumerate(pop_vec_cond.orientation.values):
         line = ax.plot(*orient_pop_direction.sel(PC=PC_disp, orientation=orient), color=cmap1[i],
                        linestyle='none', marker='o', markersize=8, markeredgecolor='k', label=f'{orient: .0f}')
         objs_leg.append(line[0])
@@ -376,24 +422,33 @@ while redo:
     redo = whether_redo()
 
 
-# In[18]:
+# In[19]:
 
+
+from sklearn.cluster import KMeans
 
 redo = True
 while redo:
     n_clusters = 3
-    n_top_pc, n_clusters = get_parameters({
+    n_top_pc, n_clusters, two_step_clustering = get_parameters({
         'number_top_PCs': n_top_pc,
-        'number_orientation_clusters': n_clusters
+        'number_orientation_clusters': n_clusters,
+        'two_step_clustering': True
     }, parameters_dict, enter_parameters)
 
-    from sklearn.cluster import KMeans
-
     PC_axis = np.arange(n_top_pc)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=1)
-    orient_labels = kmeans.fit_predict(orient_pop_direction.sel(PC=PC_axis).values.T)
-    orient_pop_centers = kmeans.cluster_centers_ @ pca.components_[PC_axis]
+    if two_step_clustering:
+        kmeans_init = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
+        kmeans_init.fit(orient_pop_direction.sel(PC=PC_axis).values.T)
+        kmeans = KMeans(n_clusters=n_clusters, init=kmeans_init.cluster_centers_, n_init=1)
+        kmeans.fit(pop_vec_stable.sel(PC=PC_axis).stack(sample=(
+            'orientation', 'temporal_frequency', 'time_relative_to_stimulus_onset')).values.T)
+    else:
+        kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
+        kmeans.fit(orient_pop_direction.sel(PC=PC_axis).values.T)
 
+    orient_labels = kmeans.predict(orient_pop_direction.sel(PC=PC_axis).values.T)
+    orient_pop_centers = kmeans.cluster_centers_ @ pca.components_[PC_axis]
     orientation_group_df = pd.DataFrame(dict(
         orientation={g: orient_pop_direction.orientation[orient_labels == g].values.tolist() for g in range(n_clusters)},
         **{f'PC_{p:d}_component': kmeans.cluster_centers_[:, p] for p in PC_axis},
@@ -407,22 +462,25 @@ while redo:
 # display(pca_df)
 
 
-# In[19]:
+# In[20]:
 
 
-orientation_groups = np.array([s for s in pca_df.columns if 'orientation_group' in s])
+orientation_group_name = np.array([s for s in pca_df.columns if 'orientation_group' in s])
 
 _, axs = plt.subplots(n_clusters, 1, figsize=(6, 2.5 * n_clusters))
 for i in range(n_clusters):
     ax = axs[i]
-    ax.bar(range(n_units), pca_df[orientation_groups[i]])
+    label = f'cluster_{i:d}_components'
+    ax.bar(range(n_units), pca_df[orientation_group_name[i]])
     ax.set_xlim(-1, n_units)
+    ax.set_xlabel('units')
+    ax.set_ylabel(label)
 fig_disp('orientation_clusters_unit_components')
 
 
 # ### Save data for later analysis
 
-# In[20]:
+# In[21]:
 
 
 filepath_prefix = os.path.join(probe_dir, f'{ecephys_structure_acronym:s}_{stimulus_name:s}')
@@ -435,7 +493,7 @@ orientation_group_df.to_csv(filepath_prefix + '_pca_orient_groups.csv')
 
 # ## Save parameters in config
 
-# In[21]:
+# In[22]:
 
 
 with open(info_file, 'w') as f:

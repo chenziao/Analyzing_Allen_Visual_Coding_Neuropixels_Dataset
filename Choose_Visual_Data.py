@@ -240,7 +240,7 @@ else:
 
 import xarray as xr
 import matplotlib.pyplot as plt
-import sklearn as sk
+from sklearn.preprocessing import MinMaxScaler
 
 whether_redo = redo_condition(True)
 fig_disp = figure_display_function(config, session_id=session_id, ecephys_structure_acronym=ecephys_structure_acronym)
@@ -261,7 +261,7 @@ while redo:
         method = 'ltsa' # 'standard' 'hessian' 'ltsa' 'modified'
         lle = LocallyLinearEmbedding(n_components=1, n_neighbors=6, method=method)
         probe_coord = lle.fit_transform(channel_coord) # 1D coordinate of channels
-        probe_coord = sk.preprocessing.MinMaxScaler().fit_transform(probe_coord)
+        probe_coord = MinMaxScaler().fit_transform(probe_coord)
 
         # find number of clusters in the channels
         kmeans = KMeans(2, n_init=1)
@@ -280,7 +280,7 @@ while redo:
         n_group, = get_parameters({'n_channel_groups': 8}, info, enter_parameters=True)
         pca = PCA(n_components=1)
         probe_coord = pca.fit_transform(channel_coord)
-        probe_coord = sk.preprocessing.MinMaxScaler().fit_transform(probe_coord)
+        probe_coord = MinMaxScaler().fit_transform(probe_coord)
 
         # divide channels into groups
         sorted_probe_coord = np.sort(probe_coord.ravel())

@@ -93,7 +93,7 @@ def unit_traits(pca_df, plv, figsize=(6, 4)):
     ax2.plot(range(n_units), pca_df['mean_firing_rate'], color='r', linestyle='none',
              marker='o', markersize=8, markerfacecolor='none', label='overall')
     ax2.plot(range(n_units), plv.mean_firing_rate, color='r', linestyle='none',
-             marker='_', markersize=8, markerfacecolor='none', label='conditions')
+             marker='_', markersize=8, markerfacecolor='none', label='selected conditions')
     ax2.set_ylabel('mean_firing_rate', color='r')
     ax2.tick_params(axis ='y', labelcolor='r')
     ax2.legend(loc='upper right', framealpha=0.2)

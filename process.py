@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import xarray as xr
+import scipy as sp
 
 """
 Functions for preprocessing data obtained from allensdk
@@ -81,7 +82,45 @@ def get_units_firing_rate(session, stimulus_presentation_id, unit_ids, condition
     # collect different conditions
     units_fr = xr.concat(units_fr, dim=pd.Index(cond_presentation_id, name='condition_id'))
     # convert to firing rate in Hz
-    units_fr = (units_fr / bin_width).to_dataset(name='spike_rate').assign_attrs(bin_width=bin_width)
-    # units mean firing rate
-    units_fr = units_fr.assign(units_mean_fr=units_fr.spike_rate.mean(dim=['condition_id', 'time_relative_to_stimulus_onset']))
+    spike_rate = units_fr / bin_width
+    units_fr_min = spike_rate.min(dim=('condition_id', 'time_relative_to_stimulus_onset'))
+    units_fr_max = spike_rate.max(dim=('condition_id', 'time_relative_to_stimulus_onset'))
+    units_fr = spike_rate.to_dataset(name='spike_rate').assign_attrs(bin_width=bin_width)
+    # units firing rate statistics
+    units_fr = units_fr.assign(
+        units_fr_mean=spike_rate.mean(dim=['condition_id', 'time_relative_to_stimulus_onset']),
+        units_fr_std=spike_rate.std(dim=('condition_id', 'time_relative_to_stimulus_onset')),
+        units_fr_min=units_fr_min,
+        units_fr_max=units_fr_max,
+        units_fr_range = units_fr_max - units_fr_min
+    )
+    return units_fr
+
+def preprocess_firing_rate(units_fr, sigma, units_fr_mean=None, soft_normalize_cut=0., normalization_scale='range'):
+    """Smooth and normalize units firing rate
+    units_fr: xarray of unit firing rate data and statistics
+    sigma: sigma of gaussian filter
+    units_fr_mean: array of mean firing rate of each unit
+    soft_normalize_cut: cutoff value of soft-normalization. Set to 0 is equivalent to regular normalization.
+    normalization_scale:
+        If is a string, use 'range' (default) min-max normalization, 'std' standardization, 'mean' normalize by mean
+        Otherwise, should be an array of scaling factor for firing rate normalization of each unit
+    """
+    if units_fr_mean is None:
+        units_fr_mean = units_fr.units_fr_mean
+    else:
+        units_fr_mean = xr.DataArray(units_fr_mean, coords={'unit_id': units_fr.unit_id})
+    if isinstance(normalization_scale, str):
+        normalization_scale = getattr(units_fr, 'units_fr_' + normalization_scale)
+    else:
+        normalization_scale = xr.DataArray(normalization_scale, coords={'unit_id': units_fr.unit_id})
+    # smooth firing rate using Gaussian filter
+    axis = units_fr.spike_rate.dims.index('time_relative_to_stimulus_onset')
+    smoothed = sp.ndimage.gaussian_filter1d(units_fr.spike_rate - units_fr_mean,
+                                            sigma / units_fr.bin_width, axis=axis, mode='constant')
+    smoothed = units_fr.spike_rate.copy(data=smoothed) + units_fr_mean
+    units_fr = units_fr.assign(smoothed=smoothed)
+    # soft normalize firing rate
+    normalized = smoothed / (normalization_scale + soft_normalize_cut)
+    units_fr = units_fr.assign(normalized=normalized)
     return units_fr
