@@ -106,7 +106,7 @@ units_fr = get_units_firing_rate(session, grating_ids, sel_units_id, condition_i
                                  bin_width=bin_width, window=(-0.5, grating_duration))
 
 
-# In[23]:
+# In[8]:
 
 
 spike_rate = units_fr.spike_rate.stack(sample=('condition_id', 'time_relative_to_stimulus_onset'))
@@ -167,7 +167,7 @@ while redo:
 # In[10]:
 
 
-get_parameters({'soft_normalize_cut': soft_normalize_cut}, parameters_dict, False)
+parameters_dict['soft_normalize_cut'] = soft_normalize_cut
 units_fr = preprocess_firing_rate(units_fr, sigma, soft_normalize_cut=soft_normalize_cut, normalization_scale=norm_scale)
 
 

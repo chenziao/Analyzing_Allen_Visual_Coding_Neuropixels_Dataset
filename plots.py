@@ -60,21 +60,33 @@ def correlation_plot(x, y, xlabel=None, ylabel=None, xy=(.7, .9), ax=None, **plo
 
 def corr_in_plot(x, y, xy=(.7, .9), ax=None, hue=None, **kwargs):
     """Plot the correlation coefficient at xy location of axis, by default top right"""
-    corr = sp.stats.pearsonr(x, y).statistic
+    corr = sp.stats.pearsonr(x, y)
+    corr = corr.statistic if hasattr(corr, 'statistic') else corr[0]
     ax = ax or plt.gca()
     ax.annotate(f'p={corr:.3f}', xy=xy, xycoords=ax.transAxes)
     return corr
 
-def aling_axes_limits(axes):
+def aling_axes_limits(axes, axis='xy', include_diag=False):
     """Ensure limits of axes on each pairplot match"""
-    lims = np.array([[ax.get_xlim() for ax in axes[0, :]], [ax.get_ylim() for ax in axes[:, 0]]])
-    lims = np.column_stack([lims[:, :, 0].max(axis=0), lims[:, :, 1].min(axis=0)])
+    lims = np.empty((2, axes.size, 2)) # (xy, axes, limits)
+    for i, ax in enumerate(axes.ravel()):
+        lims[0, i] = ax.get_xlim()
+        lims[1, i] = ax.get_ylim()
+    lims = lims.reshape((2, ) + axes.shape + (2, ))
+    if not include_diag:
+        for i in range(min(axes.shape)):
+            lims[:, i, i, 0] = -np.inf
+            lims[:, i, i, 1] = np.inf
+    align_x, align_y = 'x' in axis, 'y' in axis
+    xlims = np.column_stack((lims[0, :, :, 0].max(axis=0), lims[0, :, :, 1].min(axis=0))) if align_x else None
+    ylims = np.column_stack((lims[1, :, :, 0].max(axis=1), lims[1, :, :, 1].min(axis=1))) if align_y else None
     for i in range(axes.shape[0]):
         for j in range(axes.shape[1]):
             ax = axes[i, j]
-            ax.set_xlim(lims[j])
-            if i != j:
-                ax.set_ylim(lims[i])
+            if align_x:
+                ax.set_xlim(xlims[j])
+            if align_y and (include_diag or i != j):
+                ax.set_ylim(ylims[i])
 
 def unit_traits(pca_df, plv, figsize=(6, 4)):
     """Plot principal components, phase locking value and mean firing rate of each unit"""
