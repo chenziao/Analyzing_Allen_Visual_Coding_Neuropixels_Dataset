@@ -59,16 +59,20 @@ def trial_psd(aligned_lfp, tseg=1.):
     f, pxx = sp.signal.welch(aligned_lfp.LFP, fs=fs, nperseg=nperseg)
     psd_array = xr.DataArray(pxx, coords={
         'channel': aligned_lfp.channel, 'presentation_id': aligned_lfp.presentation_id, 'frequency': f
-    }).to_dataset(name='PSD')
+    })
     return psd_array
 
 def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 100.), figsize=(5, 4),
                  aperiodic_mode='knee', dB_threshold=3., max_n_peaks=10, plt_log=True):
     """Plot PSD at given chennel with FOOOF results"""
+    plt_range = np.array(plt_range)
+    if plt_range.size == 1:
+        plt_range = (0, plt_range.item())
     psd_avg_plt = psd_avg.sel(frequency=slice(*plt_range))
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', plt.cm.get_cmap('plasma')(np.linspace(0, 1, psd_avg.dims['channel'])))
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color',
+        plt.cm.get_cmap('plasma')(np.linspace(0, 1, psd_avg.coords['channel'].size)))
     plt.figure(figsize=figsize)
-    plt.plot(psd_avg_plt.frequency, psd_avg_plt.PSD.T, label=psd_avg_plt.channel.values)
+    plt.plot(psd_avg_plt.frequency, psd_avg_plt.values.T, label=psd_avg_plt.channel.values)
     plt.xlim(plt_range)
     plt.yscale('log')
     plt.legend(loc='upper right', framealpha=0.2, title='channel ID')
@@ -77,23 +81,28 @@ def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 10
     fig1 = plt.gcf()
 
     if channel_id is None:
-        channel_id = lfp_array.channel[0]
+        channel_id = psd_avg.channel[0]
     print(f'Channel: {channel_id: d}')
     psd_avg_plt = psd_avg.sel(channel=channel_id)
-    results = fit_fooof(psd_avg_plt.frequency.values, psd_avg_plt.PSD.values,
+    results = fit_fooof(psd_avg_plt.frequency.values, psd_avg_plt.values,
                         aperiodic_mode=aperiodic_mode, dB_threshold=dB_threshold, max_n_peaks=max_n_peaks,
                         freq_range=freq_range, peak_width_limits=None, report=True,
                         plot=True, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize)
     fig2 = plt.gcf()
     return results, fig1, fig2
 
+# cone of influence in frequency for cmorxx-1.0 wavelet
+f0 = 2 * np.pi
+CMOR_COI = 2 ** -0.5
+CMOR_FLAMBDA = 4 * np.pi / (f0 + (2 + f0 ** 2) ** 0.5)
+COI_FREQ = 1 / (CMOR_COI * CMOR_FLAMBDA)
+
 def cwt_spectrogram(x, fs, nNotes=6, nOctaves=np.inf, freq_range=(0, np.inf),
                     bandwidth=1.0, axis=-1, detrend=False, normalize=False):
     """Calculate spectrogram using continuous wavelet transform"""
     x = np.asarray(x)
     N = x.shape[axis]
-    dt = 1 / fs
-    times = np.arange(N) * dt
+    times = np.arange(N) / fs
     # detrend and normalize
     if detrend:
         x = sp.signal.detrend(x, axis=axis, type='linear')
@@ -111,40 +120,36 @@ def cwt_spectrogram(x, fs, nNotes=6, nOctaves=np.inf, freq_range=(0, np.inf),
     wavelet = 'cmor' + str(2 * bandwidth) + '-1.0'
     frequencies = pywt.scale2frequency(wavelet, scales) * fs
     scales = scales[(frequencies >= freq_range[0]) & (frequencies <= freq_range[1])]
-    coef, frequencies = pywt.cwt(x, scales[::-1], wavelet=wavelet, sampling_period=dt, axis=axis)
+    coef, frequencies = pywt.cwt(x, scales[::-1], wavelet=wavelet, sampling_period=1 / fs, axis=axis)
     power = np.real(coef * np.conj(coef)) # equivalent to power = np.abs(coef)**2
     # smooth a bit
 #     power = sp.ndimage.gaussian_filter(power, sigma=2, axes=(axis, ))
-    # cone of influence in frequency for cmorxx-1.0 wavelet
-    f0 = 2 * np.pi
-    cmor_coi = 2 ** -0.5
-    cmor_flambda = 4 * np.pi / (f0 + (2 + f0 ** 2) ** 0.5)
     # cone of influence in terms of wavelength
     coi = N / 2 - np.abs(np.arange(N) - (N - 1) / 2)
-    coi *= cmor_flambda * cmor_coi * dt
     # cone of influence in terms of frequency
-    coif = 1 / coi
+    coif = COI_FREQ * fs / coi
     return power, times, frequencies, coif
 
 def trial_averaged_spectrogram(aligned_lfp, tseg=1., cwt=True, downsample_fs=200.):
     """Calculate average spectrogram over trials using Fourier or wavelet transform"""
     fs = aligned_lfp.fs
+    axis = aligned_lfp.LFP.dims.index('time_from_presentation_onset')
     if cwt:
         t = aligned_lfp.time_from_presentation_onset.values
-        if downsample_fs is None:
+        if downsample_fs is None or downsample_fs >= fs:
             downsample_fs = fs
             downsampled = aligned_lfp.LFP.values
         else:
             num = int(t.size * downsample_fs / fs)
             downsample_fs = num / t.size * fs
-            axis = aligned_lfp.LFP.dims.index('time_from_presentation_onset')
-            downsampled, t = sp.signal.resample(aligned_lfp.LFP, num=num, t=t, axis=axis)
-        sxx, _, f, coif = cwt_spectrogram(downsampled, downsample_fs, freq_range=(1 / tseg, np.inf), axis=axis)
-        sxx = np.moveaxis(sxx, 0, -2)
+            downsampled, t = sp.signal.resample(aligned_lfp.LFP.values, num=num, t=t, axis=axis)
+        downsampled = np.moveaxis(downsampled, axis, -1)
+        sxx, _, f, coif = cwt_spectrogram(downsampled, downsample_fs, freq_range=(1 / tseg, np.inf), axis=-1)
+        sxx = np.moveaxis(sxx, 0, -2) # shape (... , freq, time)
     else:
         trial_duration = aligned_lfp.time_from_presentation_onset[-1] - aligned_lfp.time_from_presentation_onset[0]
         nperseg = int(np.ceil(trial_duration / max(np.round(trial_duration / tseg), 1) * fs))
-        f, t, sxx = sp.signal.spectrogram(aligned_lfp.LFP.values, fs=fs, nperseg=nperseg)
+        f, t, sxx = sp.signal.spectrogram(np.moveaxis(aligned_lfp.LFP.values, axis, -1), fs=fs, nperseg=nperseg)
         t += aligned_lfp.time_from_presentation_onset.values[0]
     sxx_avg = xr.DataArray(sxx, coords={
         'channel': aligned_lfp.channel, 'presentation_id': aligned_lfp.presentation_id, 'frequency': f, 'time': t
@@ -159,7 +164,6 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
     sxx = sxx_xarray.PSD.values.copy()
     t = sxx_xarray.time.values.copy()
     f = sxx_xarray.frequency.values.copy()
-    f1_idx = 0 if f[0] else f[1]
 
     cbar_label = 'PSD' if remove_aperiodic is None else 'PSD Residual'
     if plt_log:
@@ -168,15 +172,16 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
         cbar_label += ' log(power)'
 
     if remove_aperiodic is not None:
-        ap_fit = gen_aperiodic(f[1:], remove_aperiodic.aperiodic_params)
-        sxx[1:, :] -= (ap_fit if plt_log else 10 ** ap_fit)[:, None]
-        sxx[0, :] = 0.
+        f1_idx = 0 if f[0] else 1
+        ap_fit = gen_aperiodic(f[f1_idx:], remove_aperiodic.aperiodic_params)
+        sxx[f1_idx:, :] -= (ap_fit if plt_log else 10 ** ap_fit)[:, None]
+        sxx[:f1_idx, :] = 0.
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
     plt_range = np.array(f[-1]) if plt_range is None else np.array(plt_range)
     if plt_range.size == 1:
-        plt_range = [next(x for x in f if x) if plt_log else 0., plt_range.item()]
+        plt_range = [f[0 if f[0] else 1] if plt_log else 0., plt_range.item()]
     f_idx = (f >= plt_range[0]) & (f <= plt_range[1])
     if clr_freq_range is None:
         vmin, vmax = None, None
@@ -214,8 +219,8 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), plt_
     for channel, ax in zip(channel_id, axs.ravel()):
         sxx_single = sxx_avg.sel(channel=channel)
         if remove_aperiodic is not None:
-            sxx_tot = sxx_single.mean(dim='time')
-            fooof_results, _ = fit_fooof(sxx_tot.frequency.values, sxx_tot.PSD.values, **remove_aperiodic)
+            sxx_tot = sxx_single.PSD.mean(dim='time')
+            fooof_results, _ = fit_fooof(sxx_tot.frequency.values, sxx_tot.values, **remove_aperiodic)
         _ = plot_spectrogram(sxx_single, remove_aperiodic=fooof_results, plt_log=plt_log,
                              plt_range=plt_range, clr_freq_range=clr_freq_range, ax=ax)
         ax.set_title(f'channel {channel: d}')
