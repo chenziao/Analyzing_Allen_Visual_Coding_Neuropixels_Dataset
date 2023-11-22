@@ -269,14 +269,14 @@ redo = True
 while redo:
     freq_band, = get_parameters({'power_freq_band': freq_band}, parameters_dict, enter_parameters)
 
-    cond_band_power = drifting_gratings_cond_psd.sel(frequency=slice(*freq_band)).integrate('frequency').rename(PSD='band power')
+    cond_band_power = drifting_gratings_cond_psd.sel(frequency=slice(*freq_band)).integrate('frequency')
 
     temporal_frequency = cond_band_power.temporal_frequency.values
-    nchannel = cond_band_power.dims['channel']
+    nchannel = cond_band_power.coords['channel'].size
 
     _, axs = plt.subplots(nchannel, 1, squeeze=False, figsize=(5, 3 * nchannel))
     for c, ax in zip(cond_band_power.channel, axs.ravel()):
-        cpower = cond_band_power.sel(channel=c).to_array()[0].T
+        cpower = cond_band_power.sel(channel=c).T
         cpower.plot.imshow(ax=ax)
         ax.set_yticks(np.linspace(temporal_frequency[0], temporal_frequency[-1], temporal_frequency.size))
         ax.set_yticklabels(temporal_frequency)
