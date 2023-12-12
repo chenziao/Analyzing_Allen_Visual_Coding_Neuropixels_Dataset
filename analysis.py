@@ -27,7 +27,11 @@ def fit_fooof(f, pxx, aperiodic_mode='fixed', dB_threshold=3., max_n_peaks=10,
     fm = FOOOF(peak_width_limits=peak_width_limits, min_peak_height=dB_threshold / 10,
                peak_threshold=0., max_n_peaks=max_n_peaks, aperiodic_mode=aperiodic_mode)
     # Fit the model
-    fm.fit(f, pxx, freq_range)
+    try:
+        fm.fit(f, pxx, freq_range)
+    except Exception as e:
+        fl = np.linspace(f[0], f[-1], int((f[-1] - f[0]) / np.min(np.diff(f))) + 1)
+        fm.fit(fl, np.interp(fl, f, pxx), freq_range)
     results = fm.get_results()
 
     if report:
