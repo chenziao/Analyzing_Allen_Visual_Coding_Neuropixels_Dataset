@@ -204,7 +204,7 @@ while redo:
     channel_ids, = get_parameters({'scaleogram_channels': list(map(int, lfp_array.channel))}, parameters_dict, enter_parameters)
 
     sxx_avg = trial_averaged_spectrogram(aligned_lfp, tseg=.5)
-    _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), plt_log=True,
+    _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), log_power=True,
                                  clr_freq_range=(30., 80.), figsize=(6, 3.6),
                                  remove_aperiodic={'freq_range': 200., 'aperiodic_mode': aperiodic_mode})
     fig_disp('natural_movie1_scaleogram')
@@ -240,7 +240,7 @@ while redo:
     channel_ids, = get_parameters({'scaleogram_channels': list(map(int, lfp_array.channel))}, parameters_dict, enter_parameters)
 
     sxx_avg = trial_averaged_spectrogram(aligned_lfp, tseg=.5)
-    _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), plt_log=True,
+    _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), log_power=True,
                                  clr_freq_range=(30., 80.), figsize=(6, 3.6),
                                  remove_aperiodic={'freq_range': 200., 'aperiodic_mode': aperiodic_mode})
     fig_disp('natural_movie3_scaleogram')
@@ -319,7 +319,7 @@ while redo:
         print(f'\ntemporal_frequency: {freq: .1f} Hz')
         present_ids = np.concatenate([cond_presentation_id[i] for i in condition_id.sel(temporal_frequency=freq).values])
         sxx_avg = trial_averaged_spectrogram(grating_aligned_lfp.sel(presentation_id=present_ids), tseg=.25)
-        _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), plt_log=True,
+        _ = plot_channel_spectrogram(sxx_avg, channel_id=channel_ids, plt_range=(0, 100.), log_power=True,
                                      clr_freq_range=(25., 40.), figsize=(5, 3),
                                      remove_aperiodic={'freq_range': 200., 'aperiodic_mode': aperiodic_mode})
         fig_disp(f'drifting_grating_tfreq_{freq:g}_scaleogram')

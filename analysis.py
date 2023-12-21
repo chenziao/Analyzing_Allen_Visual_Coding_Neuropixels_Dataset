@@ -162,7 +162,7 @@ def trial_averaged_spectrogram(aligned_lfp, tseg=1., cwt=True, downsample_fs=200
         sxx_avg = sxx_avg.assign(cone_of_influence_frequency=xr.DataArray(coif, coords={'time': t}))
     return sxx_avg
 
-def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
+def plot_spectrogram(sxx_xarray, remove_aperiodic=None, log_power=False,
                      plt_range=None, clr_freq_range=None, ax=None):
     """Plot spectrogram. Determine color limits using value in frequency band clr_freq_range"""
     sxx = sxx_xarray.PSD.values.copy()
@@ -170,7 +170,7 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
     f = sxx_xarray.frequency.values.copy()
 
     cbar_label = 'PSD' if remove_aperiodic is None else 'PSD Residual'
-    if plt_log:
+    if log_power:
         with np.errstate(divide='ignore'):
             sxx = np.log10(sxx)
         cbar_label += ' log(power)'
@@ -178,14 +178,14 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
     if remove_aperiodic is not None:
         f1_idx = 0 if f[0] else 1
         ap_fit = gen_aperiodic(f[f1_idx:], remove_aperiodic.aperiodic_params)
-        sxx[f1_idx:, :] -= (ap_fit if plt_log else 10 ** ap_fit)[:, None]
+        sxx[f1_idx:, :] -= (ap_fit if log_power else 10 ** ap_fit)[:, None]
         sxx[:f1_idx, :] = 0.
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
     plt_range = np.array(f[-1]) if plt_range is None else np.array(plt_range)
     if plt_range.size == 1:
-        plt_range = [f[0 if f[0] else 1] if plt_log else 0., plt_range.item()]
+        plt_range = [f[0 if f[0] else 1] if log_power else 0., plt_range.item()]
     f_idx = (f >= plt_range[0]) & (f <= plt_range[1])
     if clr_freq_range is None:
         vmin, vmax = None, None
@@ -206,7 +206,7 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, plt_log=False,
     ax.set_ylabel('Frequency (Hz)')
     return sxx
 
-def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), plt_log=True,
+def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), log_power=True,
                              clr_freq_range=None, figsize=(6, 3.6),
                              remove_aperiodic={'freq_range': 200., 'aperiodic_mode': 'knee'}):
     """Plot spectrograms of given channels"""
@@ -225,7 +225,7 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), plt_
         if remove_aperiodic is not None:
             sxx_tot = sxx_single.PSD.mean(dim='time')
             fooof_results, _ = fit_fooof(sxx_tot.frequency.values, sxx_tot.values, **remove_aperiodic)
-        _ = plot_spectrogram(sxx_single, remove_aperiodic=fooof_results, plt_log=plt_log,
+        _ = plot_spectrogram(sxx_single, remove_aperiodic=fooof_results, log_power=log_power,
                              plt_range=plt_range, clr_freq_range=clr_freq_range, ax=ax)
         ax.set_title(f'channel {channel: d}')
     plt.tight_layout()
