@@ -1,7 +1,8 @@
 import numpy as np
 import xarray as xr
-import scipy as sp
+import scipy.signal as ss
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
 
 import pywt
 from fooof import FOOOF
@@ -60,7 +61,7 @@ def trial_psd(aligned_lfp, tseg=1.):
     fs = aligned_lfp.fs
     trial_duration = aligned_lfp.time_from_presentation_onset[-1] - aligned_lfp.time_from_presentation_onset[0]
     nperseg = int(np.ceil(trial_duration / max(np.round(trial_duration / tseg), 1) * fs))
-    f, pxx = sp.signal.welch(aligned_lfp.LFP, fs=fs, nperseg=nperseg)
+    f, pxx = ss.welch(aligned_lfp.LFP, fs=fs, nperseg=nperseg)
     psd_array = xr.DataArray(pxx, coords={
         'channel': aligned_lfp.channel, 'presentation_id': aligned_lfp.presentation_id, 'frequency': f
     })
@@ -109,7 +110,7 @@ def cwt_spectrogram(x, fs, nNotes=6, nOctaves=np.inf, freq_range=(0, np.inf),
     times = np.arange(N) / fs
     # detrend and normalize
     if detrend:
-        x = sp.signal.detrend(x, axis=axis, type='linear')
+        x = ss.detrend(x, axis=axis, type='linear')
     if normalize:
         x = x / x.std()
     # Define some parameters of our wavelet analysis. 
@@ -117,17 +118,15 @@ def cwt_spectrogram(x, fs, nNotes=6, nOctaves=np.inf, freq_range=(0, np.inf),
     # min = 2 (Nyquist frequency)
     # max = np.floor(N/2)
     nOctaves = min(nOctaves, np.log2(2 * np.floor(N / 2)))
-    scales = 2 ** (1 + np.arange(np.floor(nOctaves * nNotes)) / nNotes)
+    scales = 2 ** np.arange(1, nOctaves, 1 / nNotes)
     # cwt and the frequencies used. 
-    # Use the complex morelet with bw=2*bandwidth and center frequency of 1.0
-    # bandwidth is the sigma of the gaussian envelope
-    wavelet = 'cmor' + str(2 * bandwidth) + '-1.0'
+    # Use the complex morelet with bw=2*bandwidth^2 and center frequency of 1.0
+    # bandwidth is sigma of the gaussian envelope
+    wavelet = 'cmor' + str(2 * bandwidth ** 2) + '-1.0'
     frequencies = pywt.scale2frequency(wavelet, scales) * fs
     scales = scales[(frequencies >= freq_range[0]) & (frequencies <= freq_range[1])]
     coef, frequencies = pywt.cwt(x, scales[::-1], wavelet=wavelet, sampling_period=1 / fs, axis=axis)
     power = np.real(coef * np.conj(coef)) # equivalent to power = np.abs(coef)**2
-    # smooth a bit
-#     power = sp.ndimage.gaussian_filter(power, sigma=2, axes=(axis, ))
     # cone of influence in terms of wavelength
     coi = N / 2 - np.abs(np.arange(N) - (N - 1) / 2)
     # cone of influence in terms of frequency
@@ -146,14 +145,14 @@ def trial_averaged_spectrogram(aligned_lfp, tseg=1., cwt=True, downsample_fs=200
         else:
             num = int(t.size * downsample_fs / fs)
             downsample_fs = num / t.size * fs
-            downsampled, t = sp.signal.resample(aligned_lfp.LFP.values, num=num, t=t, axis=axis)
+            downsampled, t = ss.resample(aligned_lfp.LFP.values, num=num, t=t, axis=axis)
         downsampled = np.moveaxis(downsampled, axis, -1)
         sxx, _, f, coif = cwt_spectrogram(downsampled, downsample_fs, freq_range=(1 / tseg, np.inf), axis=-1)
         sxx = np.moveaxis(sxx, 0, -2) # shape (... , freq, time)
     else:
         trial_duration = aligned_lfp.time_from_presentation_onset[-1] - aligned_lfp.time_from_presentation_onset[0]
         nperseg = int(np.ceil(trial_duration / max(np.round(trial_duration / tseg), 1) * fs))
-        f, t, sxx = sp.signal.spectrogram(np.moveaxis(aligned_lfp.LFP.values, axis, -1), fs=fs, nperseg=nperseg)
+        f, t, sxx = ss.spectrogram(np.moveaxis(aligned_lfp.LFP.values, axis, -1), fs=fs, nperseg=nperseg)
         t += aligned_lfp.time_from_presentation_onset.values[0]
     sxx_avg = xr.DataArray(sxx, coords={
         'channel': aligned_lfp.channel, 'presentation_id': aligned_lfp.presentation_id, 'frequency': f, 'time': t
@@ -231,14 +230,19 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), log_
     plt.tight_layout()
     return axs
 
-def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None):
+def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None, output='ba'):
     """Filter LFP. Get amplitude and phase using Hilbert transform.
     extend_time: duration at the start and end to avoid boundary effect for filtering.
     """
-    bfilt, afilt = sp.signal.butter(order, filt_band, btype='bandpass', fs=aligned_lfp.fs)
+    filt = ss.butter(order, filt_band, btype='bandpass', fs=aligned_lfp.fs, output=output)
     axis = aligned_lfp.LFP.dims.index('time_from_presentation_onset')
-    filtered = sp.signal.filtfilt(bfilt, afilt, aligned_lfp.LFP, axis=axis)
-    analytic = sp.signal.hilbert(filtered)
+    if output == 'ba':
+        filtered = ss.filtfilt(*filt, aligned_lfp.LFP, axis=axis)
+    elif output == 'sos':
+        filtered = ss.sosfiltfilt(filt, aligned_lfp.LFP, axis=axis)
+    else:
+        raise ValueError(f"Filter type {output} not supported.")
+    analytic = ss.hilbert(filtered)
     if extend_time is None:
         extend_time = aligned_lfp.extend_time
     filtered_lfp = xr.Dataset(
@@ -326,3 +330,118 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
     if unbiased:
         ds = ds.assign({'PLV_unbiased': (['unit_id'], plv_ub)})
     return ds
+
+def wave_hilbert(x, freq_band, fs, filt_order=4, axis=-1):
+    sos = ss.butter(N=filt_order, Wn=freq_band, btype='bandpass', fs=fs, output='sos')
+    x_a = ss.hilbert(ss.sosfiltfilt(sos, np.asarray(x), axis=axis), axis=axis)
+    return x_a
+
+def wave_cwt(x, freq, fs, bandwidth=1.0, axis=-1):
+    wavelet = 'cmor' + str(2 * bandwidth ** 2) + '-1.0'
+    x_a = pywt.cwt(np.asarray(x), fs / freq, wavelet=wavelet, axis=axis)[0][0]
+    return x_a
+
+def get_waves(x, fs, waves, transform, axis=-1, component='amp', **kwargs):
+    x = np.asarray(x)
+    y = np.empty((len(waves),) + x.shape)
+    comp_funcs = {'amp': np.abs, 'pha': np.angle}
+    comp_func = comp_funcs.get(component, comp_funcs['amp'])
+    for i, freq in enumerate(waves.values()):
+        y[i][:] = comp_func(transform(x, freq, fs, axis=axis, **kwargs))
+    return y
+
+def spike_count(tspk, bin_edges):
+    """Count spikes given in list of spike times into bins"""
+    ispk = np.digitize(tspk, bin_edges)
+    cspk = np.zeros(bin_edges.size + 1, dtype=int)
+    for i in ispk:
+        cspk[i] += 1
+    return cspk[1:-1]
+
+def gauss_filt_da(da, filt_sigma, dim='time'):
+    """Gaussian smooth xr.DataArray along specific dimension"""
+    dims = da.dims
+    axis = dims.index(dim)
+    sigma = [0] * len(dims)
+    sigma[axis] = filt_sigma
+    filt = gaussian_filter(da, sigma)
+    return xr.DataArray(filt, coords=da.coords, dims=dims)
+
+def gauss_filt(x, filt_sigma, axis=-1):
+    """Gaussian smooth numpy array along specific dimension"""
+    x = np.asarray(x).astype(float)
+    sigma = [0] * x.ndim
+    sigma[axis] = filt_sigma
+    return gaussian_filter(x, sigma)
+
+def exponential_spike_filter(spikes, tau, cut_val=1e-3, min_rate=None,
+                             normalize=False, last_jump=True, only_jump=False):
+    """Filter spike train (boolean/int array) with exponential response
+    spikes: spike count array (time bins along the last axis)
+    tau: time constant of the exponential decay (normalized by time step)
+    cut_val: value at which to cutoff the tail of the exponential response
+    min_rate: minimum rate of spike (normalized by sampling rate). Default: 1/(9*tau)
+        It ensures the filtered values not less than min_val=exp(-1/(min_rate*tau)).
+        It also ensures the jump value not less than 1+min_val.
+        Specify min_rate=0 to set min_val to 0.
+    normalize: whether normalize response to have integral 1 for filtering
+    last_jump: whether return a time series with value at each time point equal
+        to the unnormalized filtered value at the last spike (jump value)
+    only_jump: whether return jump values only at spike times, 0 at non-spike time
+    """
+    spikes = np.asarray(spikes).astype(float)
+    shape = spikes.shape
+    if tau <= 0:
+        filtered = spikes
+        if only_jump:
+            jump = spikes.copy()
+        elif last_jump:
+            jump = np.ones(shape)
+    else:
+        spikes = spikes.reshape(-1, shape[-1])
+        min_val = np.exp(-9) if min_rate is None else \
+            (0 if min_rate <= 0 else np.exp(-1 / min_rate / tau))
+        t_cut = int(np.ceil(-np.log(cut_val) * tau))
+        response = np.exp(-np.arange(t_cut) / tau)[None, :]
+        filtered = ss.convolve(spikes, response, mode='full')
+        filtered = np.fmax(filtered[:, :shape[-1]], min_val)
+        if only_jump:
+            idx = spikes > 0
+            jump = np.where(idx, filtered, 0)
+            if min_val > 0:
+                jump[idx] = np.fmax(jump[idx], 1 + min_val)
+        elif last_jump:
+            min_val = 1 + min_val
+            jump = filtered.copy()
+            for jp, spks in zip(jump, spikes):
+                idx = np.nonzero(spks)[0].tolist() + [None]
+                jp[None:idx[0]] = min_val
+                for i in range(len(idx) - 1):
+                    jp[idx[i]:idx[i + 1]] = max(jp[idx[i]], min_val)
+        if normalize:
+            filtered /= np.sum(response)
+        filtered = filtered.reshape(shape)
+    if last_jump or only_jump:
+        jump = jump.reshape(shape)
+        filtered = (filtered, jump)
+    return filtered
+
+def stp_weights(rspk, tau, unit_axis=-2, time_axis=-1, i_start=0, i_stop=None):
+    """Compute STP weigths from preprocessed spike rate
+    tau: exponential filter time constant (time steps), scalar or array
+    """
+    tau = np.asarray(tau)
+    rspk = np.asarray(rspk)
+    slc = [slice(None)] * rspk.ndim
+    slc[time_axis] = slice(i_start, i_stop)
+    slc = tuple(slc)
+    rspk_exp_filt = [np.moveaxis(exponential_spike_filter(np.moveaxis(rspk, time_axis, -1),
+        tau=t, min_rate=0, normalize=True, last_jump=False), -1, time_axis)[slc] for t in tau.ravel()]
+    rspk_exp_filt = np.stack(rspk_exp_filt, axis=0)
+    rspk = rspk[slc]
+    w_stp = rspk * rspk_exp_filt
+    fr_tot = rspk
+    if unit_axis is not None:
+        w_stp = np.mean(w_stp, axis=unit_axis)
+        fr_tot = np.mean(fr_tot, axis=unit_axis)
+    return w_stp, fr_tot
