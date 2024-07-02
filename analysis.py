@@ -6,7 +6,7 @@ from scipy.ndimage import gaussian_filter
 
 import pywt
 from fooof import FOOOF
-from fooof.sim.gen import gen_aperiodic
+from fooof.sim.gen import gen_aperiodic, gen_model
 
 """
 Functions for analyzing preprocessed data
@@ -68,7 +68,7 @@ def trial_psd(aligned_lfp, tseg=1.):
     return psd_array
 
 def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 100.), figsize=(5, 4),
-                 aperiodic_mode='knee', dB_threshold=3., max_n_peaks=10, plt_log=True):
+                     aperiodic_mode='knee', dB_threshold=3., max_n_peaks=10, plot=True, plt_log=True):
     """Plot PSD at given chennel with FOOOF results"""
     plt_range = np.array(plt_range)
     if plt_range.size == 1:
@@ -92,9 +92,38 @@ def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 10
     results = fit_fooof(psd_avg_plt.frequency.values, psd_avg_plt.values,
                         aperiodic_mode=aperiodic_mode, dB_threshold=dB_threshold, max_n_peaks=max_n_peaks,
                         freq_range=freq_range, peak_width_limits=None, report=True,
-                        plot=True, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize)
+                        plot=plot, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize)
     fig2 = plt.gcf()
     return results, fig1, fig2
+
+def plot_fooof(f, pxx, fooof_result, plt_log=False, plt_range=None, plt_db=True, ax=None):
+    full_fit, _, ap_fit = gen_model(f[1:], fooof_result.aperiodic_params,
+                                    fooof_result.gaussian_params, return_components=True)
+    full_fit = np.insert(10 ** full_fit, 0, pxx[0])
+    ap_fit = np.insert(10 ** ap_fit, 0, pxx[0])
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1)
+    else:
+        fig = ax.get_figure()
+    plt_range = np.array(f[-1]) if plt_range is None else np.array(plt_range)
+    if plt_range.size == 1:
+        plt_range = [f[1] if plt_log else 0., plt_range.item()]
+    f_idx = (f >= plt_range[0]) & (f <= plt_range[1])
+    f, pxx = f[f_idx], pxx[f_idx]
+    full_fit, ap_fit = full_fit[f_idx], ap_fit[f_idx]
+    if plt_db:
+        pxx, full_fit, ap_fit = [10 * np.log10(x) for x in [pxx, full_fit, ap_fit]]
+    ax.plot(f, pxx, 'k', label='Original')
+    ax.plot(f, full_fit, 'r', label='Full model fit')
+    ax.plot(f, ap_fit, 'b--', label='Aperiodic fit')
+    if plt_log:
+        ax.set_xscale('log')
+    ax.set_xlim(plt_range)
+    ax.legend(loc='upper right', frameon=False)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('PSD ' + ('dB' if plt_db else r'mV$^2$') + '/Hz')
+    return fig, ax
 
 # cone of influence in frequency for cmorxx-1.0 wavelet
 f0 = 2 * np.pi
@@ -162,7 +191,7 @@ def trial_averaged_spectrogram(aligned_lfp, tseg=1., cwt=True, downsample_fs=200
     return sxx_avg
 
 def plot_spectrogram(sxx_xarray, remove_aperiodic=None, log_power=False,
-                     plt_range=None, clr_freq_range=None, ax=None):
+                     plt_range=None, clr_freq_range=None, pad=0.03, ax=None):
     """Plot spectrogram. Determine color limits using value in frequency band clr_freq_range"""
     sxx = sxx_xarray.PSD.values.copy()
     t = sxx_xarray.time.values.copy()
@@ -172,13 +201,16 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, log_power=False,
     if log_power:
         with np.errstate(divide='ignore'):
             sxx = np.log10(sxx)
-        cbar_label += ' log(power)'
+        cbar_label += ' dB' if log_power == 'dB' else ' log(power)'
 
     if remove_aperiodic is not None:
         f1_idx = 0 if f[0] else 1
         ap_fit = gen_aperiodic(f[f1_idx:], remove_aperiodic.aperiodic_params)
         sxx[f1_idx:, :] -= (ap_fit if log_power else 10 ** ap_fit)[:, None]
         sxx[:f1_idx, :] = 0.
+
+    if log_power == 'dB':
+        sxx *= 10
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
@@ -200,13 +232,13 @@ def plot_spectrogram(sxx_xarray, remove_aperiodic=None, log_power=False,
         ax.fill_between(t, coif, step='mid', alpha=0.2)
     ax.set_xlim(t[0], t[-1])
     ax.set_ylim(f[0], f[-1])
-    plt.colorbar(mappable=pcm, ax=ax, label=cbar_label)
+    plt.colorbar(mappable=pcm, ax=ax, label=cbar_label, pad=pad)
     ax.set_xlabel('Time (sec)')
     ax.set_ylabel('Frequency (Hz)')
     return sxx
 
 def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), log_power=True,
-                             clr_freq_range=None, figsize=(6, 3.6),
+                             clr_freq_range=None, pad=0.03, figsize=(6, 3.6),
                              remove_aperiodic={'freq_range': 200., 'aperiodic_mode': 'knee'}):
     """Plot spectrograms of given channels"""
     if channel_id is None:
@@ -225,7 +257,7 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), log_
             sxx_tot = sxx_single.PSD.mean(dim='time')
             fooof_results, _ = fit_fooof(sxx_tot.frequency.values, sxx_tot.values, **remove_aperiodic)
         _ = plot_spectrogram(sxx_single, remove_aperiodic=fooof_results, log_power=log_power,
-                             plt_range=plt_range, clr_freq_range=clr_freq_range, ax=ax)
+                             plt_range=plt_range, clr_freq_range=clr_freq_range, pad=pad, ax=ax)
         ax.set_title(f'channel {channel: d}')
     plt.tight_layout()
     return axs

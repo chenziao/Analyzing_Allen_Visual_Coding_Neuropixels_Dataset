@@ -12,9 +12,14 @@
 		"ecephys_structure_acronym": "VISp"
 	},
 	"save_figure": true,
-	"figure_format": "png",
+	"figure_format": [
+		"png",
+		"pdf"
+	],
 	"savefig_kwargs": {
-		"transparent": true
+		"transparent": true,
+		"dpi": 300.0,
+		"bbox_inches": "tight"
 	},
-	"enter_parameters": true
+	"enter_parameters": false
 }

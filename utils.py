@@ -1,5 +1,10 @@
 import os
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+# Figure style
+mpl.rcParams['axes.spines.right'] = False
+mpl.rcParams['axes.spines.top'] = False
 
 """
 Functions for pipeline
@@ -19,8 +24,10 @@ def figure_display_function(config, session_id=None, ecephys_structure_acronym=N
     """
     if config['save_figure']:
         figure_format = config['figure_format']
-        if figure_format[0] != '.':
-            figure_format = '.' + figure_format
+        if isinstance(figure_format, str):
+            figure_format = [figure_format]
+        fig_ext = ['.' + x.split('.')[-1] for x in figure_format]
+
         session_id = session_id or config['analysis_object']['session_id']
         ecephys_structure_acronym = ecephys_structure_acronym or config['analysis_object']['ecephys_structure_acronym']
         figure_dir = os.path.join(config['figure_dir'], f'session_{session_id:d}_{ecephys_structure_acronym:s}')
@@ -31,9 +38,11 @@ def figure_display_function(config, session_id=None, ecephys_structure_acronym=N
         def disp_func(figname):
             if isinstance(figname, dict):
                 for fname, fig in figname.items():
-                    fig.savefig(os.path.join(figure_dir, fname + figure_format), **kwargs)
+                    for ext in fig_ext:
+                        fig.savefig(os.path.join(figure_dir, fname + ext), **kwargs)
             else:
-                plt.savefig(os.path.join(figure_dir, figname + figure_format), **kwargs)
+                for ext in fig_ext:
+                    plt.savefig(os.path.join(figure_dir, figname + ext), **kwargs)
             plt.show()
     else:
         def disp_func(*args, **kwargs):
