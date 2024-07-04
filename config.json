@@ -11,7 +11,7 @@
 		"session_id": 721123822,
 		"ecephys_structure_acronym": "VISp"
 	},
-	"save_figure": true,
+	"save_figure": false,
 	"figure_format": [
 		"png",
 		"pdf"
