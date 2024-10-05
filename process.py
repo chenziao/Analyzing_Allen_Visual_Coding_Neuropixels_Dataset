@@ -48,12 +48,12 @@ def align_movie(stimulus_presentations, stimulus_name='natural_movie_one'):
     presentations = stimulus_presentations[stimulus_presentations.stimulus_name == stimulus_name]
     frame_ids = presentations['stimulus_condition_id'].unique()
 
-    presentations_times = natural_movie_times = np.column_stack([
+    presentations_times = np.column_stack([
         presentations[presentations['stimulus_condition_id'] == frame_ids[0]]['start_time'].values,
         presentations[presentations['stimulus_condition_id'] == frame_ids[-1]]['stop_time'].values,
     ])
     presentations_ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values
-    trial_duration = np.diff(presentations_times, axis=1).max()
+    trial_duration = np.diff(presentations_times, axis=1).mean()
     return presentations, presentations_ids, presentations_times[:, 0], trial_duration
 
 def presentation_conditions(presentations, condtion_types):
@@ -69,16 +69,24 @@ def presentation_conditions(presentations, condtion_types):
     cond_presentation_id = {c: presentations.index[presentations['stimulus_condition_id'] == c] for c in condition_id.values.ravel()}
     return condition_id, cond_presentation_id
 
-def get_units_firing_rate(session, stimulus_presentation_id, unit_ids, condition_id, cond_presentation_id,
-                          bin_width=0.03, window=(-1.0, 1.0)):
-    """Get unit spike time histograms and convert to firing rates"""
+def get_units_spike_counts(session, stimulus_presentation_id, unit_ids, bin_width=0.03, window=(-1.0, 1.0)):
+    """Get unit spike counts in time histograms"""
     bin_edges = np.concatenate((np.arange(-bin_width / 2, window[0] - bin_width / 2, -bin_width)[::-1],
                             np.arange(bin_width / 2, window[1] + bin_width / 2, bin_width)))
+    
+    units_spk_counts = session.presentationwise_spike_counts(
+        stimulus_presentation_ids=stimulus_presentation_id, unit_ids=unit_ids, bin_edges=bin_edges)
+    return units_spk_counts
+
+def  get_units_firing_rate(session, stimulus_presentation_id, unit_ids, condition_id, cond_presentation_id,
+                          bin_width=0.03, window=(-1.0, 1.0)):
+    """Get unit spike time histograms and convert to firing rates"""
     # get spike count histogram for each unit
-    units_fr = session.presentationwise_spike_counts(stimulus_presentation_ids=stimulus_presentation_id,
-                                                     unit_ids=unit_ids, bin_edges=bin_edges)
+    units_spk_counts = get_units_spike_counts(session, stimulus_presentation_id, unit_ids,
+                                              bin_width=bin_width, window=window)
     # average over trials
-    units_fr = [units_fr.sel(stimulus_presentation_id=i).mean(dim='stimulus_presentation_id') for i in cond_presentation_id.values()]
+    units_fr = [units_spk_counts.sel(stimulus_presentation_id=i).mean(dim='stimulus_presentation_id') \
+        for i in cond_presentation_id.values()]
     # collect different conditions
     units_fr = xr.concat(units_fr, dim=pd.Index(cond_presentation_id, name='condition_id'))
     # convert to firing rate in Hz
@@ -124,3 +132,26 @@ def preprocess_firing_rate(units_fr, sigma, units_fr_mean=None, soft_normalize_c
     normalized = smoothed / (normalization_scale + soft_normalize_cut)
     units_fr = units_fr.assign(normalized=normalized)
     return units_fr
+
+def stack_time_samples(da, sample_dims=None, average_trials=True):
+    """Stack multiple dims of time points in a dataarray to a single sample axis along the first dimension"""
+    if sample_dims is None:
+        sample_dims = ('time_relative_to_stimulus_onset', ) if average_trials \
+            else ('stimulus_presentation_id', 'time_relative_to_stimulus_onset')
+    da = da.stack(sample=sample_dims)
+    dims = list(da.dims)
+    dims.remove('sample')
+    da = da.transpose('sample', *dims)
+    return da
+
+def stimuli_data_to_samples(datasets, sample_dims=None, average_trials=True, var='spike_rate'):
+    """Concatenate time points from multiple dataset to a single sample axis
+    average_trials: whether the datasets are trial averaged
+    """
+    if var is None:
+        dataarrays = datasets
+    else:
+        dataarrays = [ds[var] for ds in datasets]
+    da = xr.concat([stack_time_samples(da, sample_dims=sample_dims,
+        average_trials=average_trials) for da in dataarrays], dim='sample')
+    return da

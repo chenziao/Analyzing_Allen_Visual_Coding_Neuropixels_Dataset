@@ -26,7 +26,10 @@ def get_lighten_cmap(clr, N=16, light_scale=0.2, dark_scale=0.8, revert=False):
     return LinearSegmentedColormap.from_list('lighten', lighten(value, clr, light_scale, dark_scale))
 
 def plot_multicolor_line(*args, c=None, ax=None, cmap='jet', linewidth=2, linestyle='-', alpha=1):
-    """Plot line with varying color on its segments. Input coordinates: x, y, (z, optional)"""
+    """Plot line with varying color on its segments. Input coordinates: x, y, (z, optional)
+    args: arrays of coordinates of points
+    c: values for color map, corresponding to points or segments
+    """
     points = np.column_stack(args)[:, None, :]
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     if c is None:
