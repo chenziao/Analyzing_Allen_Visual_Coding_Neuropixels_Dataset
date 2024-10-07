@@ -134,7 +134,10 @@ def preprocess_firing_rate(units_fr, sigma, units_fr_mean=None, soft_normalize_c
     return units_fr
 
 def stack_time_samples(da, sample_dims=None, average_trials=True):
-    """Stack multiple dims of time points in a dataarray to a single sample axis along the first dimension"""
+    """Stack multiple dims of time points in a dataarray to a single sample axis along the first dimension
+    sample_dims: dimensions along which to consider as samples. default is for spike counts data from allensdk
+    average_trials: whether the datasets are trial averaged, ignored if `sample_dims` is specified
+    """
     if sample_dims is None:
         sample_dims = ('time_relative_to_stimulus_onset', ) if average_trials \
             else ('stimulus_presentation_id', 'time_relative_to_stimulus_onset')
@@ -145,10 +148,13 @@ def stack_time_samples(da, sample_dims=None, average_trials=True):
     return da
 
 def stimuli_data_to_samples(datasets, sample_dims=None, average_trials=True, var='spike_rate'):
-    """Concatenate time points from multiple dataset to a single sample axis
-    average_trials: whether the datasets are trial averaged
+    """Concatenate time points from multiple Datasets to a single sample axis
+    sample_dims: dimensions along which to consider as samples. default is for spike counts data from allensdk
+    average_trials: whether the datasets are trial averaged, ignored if `sample_dims` is specified
+    var: variable name of DataArray in Dataset to concatenate.
+        if is None, assume `datasets` is list of DataArrays
     """
-    if var is None:
+    if var is None or isinstance(next(iter(datasets)), xr.DataArray):
         dataarrays = datasets
     else:
         dataarrays = [ds[var] for ds in datasets]

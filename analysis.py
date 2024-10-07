@@ -477,3 +477,52 @@ def stp_weights(rspk, tau, unit_axis=-2, time_axis=-1, i_start=0, i_stop=None):
         w_stp = np.mean(w_stp, axis=unit_axis)
         fr_tot = np.mean(fr_tot, axis=unit_axis)
     return w_stp, fr_tot
+
+def quantize(x, n_bins):
+    """Quantize data in an array by its equally spaced quantiles
+    x: data array
+    n_bins: number of quantile bins of equal space
+    Return: array of bin index of data points, value of bin edges
+    """
+    x = np.asarray(x)
+    bins = np.quantile(x, np.linspace(0, 1, n_bins + 1))
+    bid = np.digitize(x, bins[1:-1])
+    return bid, bins
+
+def statistic_in_quantile_grid(X, Y, n_bins=8, stat=np.mean, stat_fill=np.nan):
+    """Divide data points into grids by n-quantiles of some features and
+    calculate statistics of some features in the grids
+    X: list of arrays of features according to which data are divided
+    Y: list of arrays of features of which to obtain statistics
+    n_bins: number of bins for all features in X
+        or a list of them corresponding to each feature in X
+    stat: function that calculate a statistic of each feature in Y. default: mean
+        function should allow operation along specific axis with argument `axis`
+    stat_fill: value to fill when no data exists in a grid. default: nan
+    Return: statistics of each feature in Y, bin edges of each features in X, nd histogram count
+    """
+    if isinstance(n_bins, int):
+        n_bins = [n_bins] * len(X)
+    else:
+        if len(X) != len(n_bins):
+            raise ValueError("Size of `n_bins` should match number of features `X`")
+    bids, bins = zip(*map(quantize, X, n_bins))
+    bidx = [np.arange(n) for n in n_bins]
+    gids = [bid == idx[:, None] for bid, idx in zip(bids, bidx)]
+    grid_ids = np.meshgrid(*bidx, indexing='ij')
+    idx_in_grid = np.full(n_bins, None, dtype=object)
+    hist_count = np.zeros(n_bins, dtype=int)
+    for ids in np.nditer(grid_ids):
+        idx = np.all([gid[i] for gid, i in zip(gids, ids)], axis=0)
+        idx_in_grid[ids] = np.nonzero(idx)[0]
+        hist_count[ids] = idx_in_grid[ids].size
+    y_stats = []
+    for y in Y:
+        y = np.asarray(y)
+        y_stat = np.full(n_bins, stat_fill, dtype=y.dtype)
+        for ids in np.nditer(grid_ids):
+            if hist_count[ids]:
+                y_stat[ids] = stat(y[idx_in_grid[ids]])
+        y_stats.append(y_stat)
+    y_stats = np.stack(y_stats, axis=0)
+    return y_stats, bins, hist_count
