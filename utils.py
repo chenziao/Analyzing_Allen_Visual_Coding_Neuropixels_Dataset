@@ -62,12 +62,15 @@ def get_parameters(default_params, params_dict, enter_parameters=False):
     if enter_parameters:
         print('Enter parameters:')
         for key, value in default_params.items():
-            if isinstance(value, str):
+            isstring = isinstance(value, str)
+            if isstring:
                 value = f'"{value}"'
             p = input(f'{key} (default: {value}) : ')
             if p != '':
-                p = eval(p)
-                default_params[key] = list(p) if type(p) is tuple else p
+                if not isstring:
+                    p = eval(p)
+                    p = list(p) if isinstance(p, tuple) else p
+                default_params[key] = p
     params_dict.update(default_params)
     return tuple(default_params.values())
 
