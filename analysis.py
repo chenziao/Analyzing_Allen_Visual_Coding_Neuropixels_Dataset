@@ -500,6 +500,7 @@ def statistic_in_quantile_grid(X, Y, n_bins=8, stat=np.mean, stat_fill=np.nan):
         function should allow operation along specific axis with argument `axis`
     stat_fill: value to fill when no data exists in a grid. default: nan
     Return: statistics of each feature in Y, bin edges of each features in X, nd histogram count
+    Note: data in X and Y must not contain nan values
     """
     if isinstance(n_bins, int):
         n_bins = [n_bins] * len(X)
