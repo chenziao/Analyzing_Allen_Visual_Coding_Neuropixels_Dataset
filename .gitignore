@@ -14,5 +14,5 @@ x86_64/
 *.zip
 /tutorial notebook/
 /ecephys_cache_dir/
-/output/
+/*output*/
 /figures_for_drew/
