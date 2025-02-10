@@ -4,7 +4,7 @@
 	"figure_dir": "./output/figures",
 	"filter_dict": {
 		"session_type": "brain_observatory_1.1",
-		"full_genotype": "Pvalb-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt",
+		"full_genotype": "",
 		"ecephys_structure_acronyms": "VISp"
 	},
 	"analysis_object": {
