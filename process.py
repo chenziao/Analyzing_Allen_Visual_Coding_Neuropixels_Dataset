@@ -78,7 +78,7 @@ def get_units_spike_counts(session, stimulus_presentation_id, unit_ids, bin_widt
         stimulus_presentation_ids=stimulus_presentation_id, unit_ids=unit_ids, bin_edges=bin_edges)
     return units_spk_counts
 
-def  get_units_firing_rate(session, stimulus_presentation_id, unit_ids, condition_id, cond_presentation_id,
+def  get_units_firing_rate(session, stimulus_presentation_id, unit_ids, cond_presentation_id,
                           bin_width=0.03, window=(-1.0, 1.0)):
     """Get unit spike time histograms and convert to firing rates"""
     # get spike count histogram for each unit
@@ -133,24 +133,36 @@ def preprocess_firing_rate(units_fr, sigma, units_fr_mean=None, soft_normalize_c
     units_fr = units_fr.assign(normalized=normalized)
     return units_fr
 
-def stack_time_samples(da, sample_dims=None, average_trials=True):
+def stack_time_samples(da, sample_dims=None, non_sample_dims=None, keep_multi_index=False):
     """Stack multiple dims of time points in a dataarray to a single sample axis along the first dimension
     sample_dims: dimensions along which to consider as samples. default is for spike counts data from allensdk
-    average_trials: whether the datasets are trial averaged, ignored if `sample_dims` is specified
+        Dimensions not in the dataarray will be ignored.
+        Note: the order of dimensions in `sample_dims` determines the order of samples
+    non_sample_dims: dimensions along which to be excluded as samples.
+        If specified, `sample_dims` will be ignored.
+        Note: the order of dimensions in the dataarray determines the order of samples
     """
-    if sample_dims is None:
-        sample_dims = ('time_relative_to_stimulus_onset', ) if average_trials \
-            else ('stimulus_presentation_id', 'time_relative_to_stimulus_onset')
+    if non_sample_dims is None:
+        if sample_dims is None:
+            sample_dims = ('stimulus_presentation_id', 'time_relative_to_stimulus_onset')
+        sample_dims = [d for d in sample_dims if d in da.dims]
+    else:
+        sample_dims = [d for d in da.dims if d not in non_sample_dims]
     da = da.stack(sample=sample_dims)
     dims = list(da.dims)
     dims.remove('sample')
     da = da.transpose('sample', *dims)
+    if not keep_multi_index:
+        samples = np.arange(da.sample.size)
+        da = da.drop_vars(sample_dims)
+        da = da.assign_coords(sample=samples)
     return da
 
-def stimuli_data_to_samples(datasets, sample_dims=None, average_trials=True, var='spike_rate'):
+def stimuli_data_to_samples(datasets, sample_dims=None, non_sample_dims=None, var='spike_rate'):
     """Concatenate time points from multiple Datasets to a single sample axis
     sample_dims: dimensions along which to consider as samples. default is for spike counts data from allensdk
-    average_trials: whether the datasets are trial averaged, ignored if `sample_dims` is specified
+    average_trials: whether the datasets are trial averaged. Dimension 'stimulus_presentation_id'
+        will not be included as sample dimensions if `average_trials` is True.
     var: variable name of DataArray in Dataset to concatenate.
         if is None, assume `datasets` is list of DataArrays
     """
@@ -159,5 +171,6 @@ def stimuli_data_to_samples(datasets, sample_dims=None, average_trials=True, var
     else:
         dataarrays = [ds[var] for ds in datasets]
     da = xr.concat([stack_time_samples(da, sample_dims=sample_dims,
-        average_trials=average_trials) for da in dataarrays], dim='sample')
+        non_sample_dims=non_sample_dims) for da in dataarrays], dim='sample')
+    da = da.assign_coords(sample=range(da.sample.size))
     return da

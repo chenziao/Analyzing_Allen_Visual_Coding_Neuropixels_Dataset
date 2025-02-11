@@ -102,7 +102,7 @@ condition_id, cond_presentation_id = presentation_conditions(
 
 bin_width = 0.03
 bin_width, = get_parameters({'spike_bin_width': bin_width}, parameters_dict, enter_parameters)
-units_fr = get_units_firing_rate(session, grating_ids, sel_units_id, condition_id, cond_presentation_id,
+units_fr = get_units_firing_rate(session, grating_ids, sel_units_id, cond_presentation_id,
                                  bin_width=bin_width, window=(-0.5, grating_duration))
 
 
