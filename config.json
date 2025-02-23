@@ -1,14 +1,14 @@
 {
 	"cache_dir": "./ecephys_cache_dir/",
-	"output_dir": "./output",
+	"output_dir": "./PCA_output_download",
 	"figure_dir": "./output/figures",
 	"filter_dict": {
-		"session_type": "brain_observatory_1.1",
+		"session_type": "functional_connectivity",
 		"full_genotype": "",
 		"ecephys_structure_acronyms": "VISp"
 	},
 	"analysis_object": {
-		"session_id": 721123822,
+		"session_id": 766640955,
 		"ecephys_structure_acronym": "VISp"
 	},
 	"save_figure": false,
