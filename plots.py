@@ -114,7 +114,7 @@ def unit_traits(pca_df, plv, figsize=(6, 4)):
     ax2.legend(loc='upper right', framealpha=0.2)
     return fig, ax
 
-def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_grid=True, ax=None):
+def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_grid=True, ax=None, **pcm_kwargs):
     """Plot heatmap in grids
     C: the mesh data used in `matplotlib.axes.Axes.pcolormesh`
     x_bins, y_bins: bin edges of the grids. X, Y used in `matplotlib.axes.Axes.pcolormesh`
@@ -126,7 +126,7 @@ def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_gr
     if ax is None:
         _, ax = plt.subplots(1, 1)
     args = [] if even_grid else (x_bins, y_bins)
-    pcm = ax.pcolormesh(*args, C)
+    pcm = ax.pcolormesh(*args, C, **pcm_kwargs)
     if even_grid:
         ax.set_xticks(range(len(x_bins)))
         ax.set_yticks(range(len(y_bins)))
