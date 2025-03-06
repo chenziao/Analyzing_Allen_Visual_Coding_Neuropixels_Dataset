@@ -1,19 +1,19 @@
 session_id,session_type,full_genotype,ecephys_structure_acronyms,psd good
-715093703,brain_observatory_1.1,Sst-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
+715093703,brain_observatory_1.1,Sst-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,False
 719161530,brain_observatory_1.1,Sst-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 721123822,brain_observatory_1.1,Pvalb-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 732592105,brain_observatory_1.1,wt/wt,VISp,True
 737581020,brain_observatory_1.1,wt/wt,VISp,True
 739448407,brain_observatory_1.1,wt/wt,VISp,False
 742951821,brain_observatory_1.1,wt/wt,VISp,True
-743475441,brain_observatory_1.1,wt/wt,VISp,True
+743475441,brain_observatory_1.1,wt/wt,VISp,False
 744228101,brain_observatory_1.1,wt/wt,VISp,True
 746083955,brain_observatory_1.1,Pvalb-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 750332458,brain_observatory_1.1,wt/wt,VISp,True
 750749662,brain_observatory_1.1,wt/wt,VISp,True
 751348571,brain_observatory_1.1,Vip-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 754312389,brain_observatory_1.1,wt/wt,VISp,False
-754829445,brain_observatory_1.1,wt/wt,VISp,True
+754829445,brain_observatory_1.1,wt/wt,VISp,False
 755434585,brain_observatory_1.1,Vip-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 756029989,brain_observatory_1.1,Sst-IRES-Cre/wt;Ai32(RCL-ChR2(H134R)_EYFP)/wt,VISp,True
 757216464,brain_observatory_1.1,wt/wt,VISp,True
