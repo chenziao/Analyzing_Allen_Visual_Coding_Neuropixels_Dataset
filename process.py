@@ -69,10 +69,18 @@ def presentation_conditions(presentations, condtion_types):
     cond_presentation_id = {c: presentations.index[presentations['stimulus_condition_id'] == c] for c in condition_id.values.ravel()}
     return condition_id, cond_presentation_id
 
+def get_bin_edges(bin_width=0.03, window=(-1.0, 1.0)):
+    bin_edges = np.concatenate((np.arange(-bin_width / 2, window[0] - bin_width / 2, -bin_width)[::-1],
+                                np.arange(bin_width / 2, window[1] + bin_width / 2, bin_width)))
+    return bin_edges
+
+def count_spike_trials(session, bin_edges, trial_start_times, unit_ids):
+    """Count spikes in bins for each trial"""
+    pass
+
 def get_units_spike_counts(session, stimulus_presentation_id, unit_ids, bin_width=0.03, window=(-1.0, 1.0)):
     """Get unit spike counts in time histograms"""
-    bin_edges = np.concatenate((np.arange(-bin_width / 2, window[0] - bin_width / 2, -bin_width)[::-1],
-                            np.arange(bin_width / 2, window[1] + bin_width / 2, bin_width)))
+    bin_edges = get_bin_edges(bin_width=bin_width, window=window)
     
     units_spk_counts = session.presentationwise_spike_counts(
         stimulus_presentation_ids=stimulus_presentation_id, unit_ids=unit_ids, bin_edges=bin_edges)

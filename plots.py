@@ -138,3 +138,17 @@ def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_gr
     ax.set_xticklabels(xticklabels)
     ax.set_yticklabels(yticklabels)
     return pcm
+
+def plot_optotag_units(optotag_df, evoked_ratio_threshold, spike_width_threshold, ax=None):
+    """Plot scatter plot of optotag units with evoked ratio and spike width thresholds"""
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+    waveform_duration, evoked_ratio = optotag_df['waveform_duration'], optotag_df['evoked_ratio']
+    positive = optotag_df['positive']
+    ax.plot(waveform_duration[positive], evoked_ratio[positive], 'r.')
+    ax.plot(waveform_duration[~positive], evoked_ratio[~positive], 'b.')
+    ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
+    ax.axvline(spike_width_threshold, linestyle=':', color='k', label='spike width threshold')
+    ax.set_xlabel('Waveform duration (ms)')
+    ax.set_ylabel('Evoked ratio')
+    ax.legend(loc='upper right', framealpha=0.2)

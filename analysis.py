@@ -527,3 +527,11 @@ def statistic_in_quantile_grid(X, Y, n_bins=8, stat=np.mean, stat_fill=np.nan):
         y_stats.append(y_stat)
     y_stats = np.stack(y_stats, axis=0)
     return y_stats, bins, hist_count
+
+def detect_optotag(optotag_df, evoked_ratio_threshold, spike_width_threshold):
+    """Detect optotag units using evoked ratio and spike width threshold from dataframe"""
+    optotag_df['cre_positive'] = optotag_df['evoked_ratio'] > evoked_ratio_threshold
+    optotag_df['low_spike_width'] = optotag_df['waveform_duration'] <= spike_width_threshold
+    optotag_df['positive'] = optotag_df['cre_positive'] & optotag_df['low_spike_width']
+    positive_units = optotag_df.index[optotag_df['positive']].values
+    return optotag_df, positive_units
