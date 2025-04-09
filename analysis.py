@@ -336,12 +336,14 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
     if presentation_ids is None:
         presentation_ids = spike_phase.presentation_id
     spk_pha = spike_phase.sel(unit_id=unit_ids, presentation_id=presentation_ids).sum(dim='presentation_id')
-    pha = spk_pha.resultant_phase.values
+    pha = spk_pha.resultant_phase
+    dims, coords = pha.dims, pha.coords
+    pha = pha.values
     N = spk_pha.spike_number.values
     plv = np.zeros(pha.shape)
     if unbiased:
         plv_ub = np.zeros(pha.shape)
-    idx = np.nonzero(N > 1)[0]
+    idx = np.nonzero(N > 1)
     if unbiased:
             plv2 = (pha[idx] * pha[idx].conj()).real / N[idx]
             plv[idx] = (plv2 / N[idx]) ** 0.5
@@ -352,15 +354,14 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
 
     ds = xr.Dataset(
         data_vars={
-            'PLV': (['unit_id'], plv),
-            'phase': (['unit_id'], np.angle(pha, deg=True)),
-            'mean_firing_rate': (['unit_id'], mean_firing_rate)
+            'PLV': (dims, plv),
+            'phase': (dims, np.angle(pha, deg=True)),
+            'mean_firing_rate': (dims, mean_firing_rate)
         },
-        coords={'unit_id': unit_ids},
-        attrs={'angle_unit': 'deg'}
+        coords=coords, attrs={'angle_unit': 'deg'}
     )
     if unbiased:
-        ds = ds.assign({'PLV_unbiased': (['unit_id'], plv_ub)})
+        ds = ds.assign({'PLV_unbiased': (dims, plv_ub)})
     return ds
 
 def wave_hilbert(x, freq_band, fs, filt_order=4, axis=-1):
