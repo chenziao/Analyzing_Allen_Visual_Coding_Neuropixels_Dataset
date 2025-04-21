@@ -67,7 +67,8 @@ def trial_psd(aligned_lfp, tseg=1.):
     })
     return psd_array
 
-def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 100.), figsize=(5, 4),
+def plot_channel_psd(psd_avg, channel_id=None, channel_coord='channel', channel_name='Channel ID',
+                     freq_range=200., plt_range=(0, 100.), figsize=(5, 4),
                      aperiodic_mode='knee', dB_threshold=3., max_n_peaks=10, plot=True, plt_log=True):
     """Plot PSD at given chennel with FOOOF results"""
     plt_range = np.array(plt_range)
@@ -75,20 +76,20 @@ def plot_channel_psd(psd_avg, channel_id=None, freq_range=200., plt_range=(0, 10
         plt_range = (0, plt_range.item())
     psd_avg_plt = psd_avg.sel(frequency=slice(*plt_range))
     plt.rcParams['axes.prop_cycle'] = plt.cycler('color',
-        plt.cm.get_cmap('plasma')(np.linspace(0, 1, psd_avg.coords['channel'].size)))
+        plt.cm.get_cmap('plasma')(np.linspace(0, 1, psd_avg.coords[channel_coord].size)))
     plt.figure(figsize=figsize)
-    plt.plot(psd_avg_plt.frequency, psd_avg_plt.values.T, label=psd_avg_plt.channel.values)
+    plt.plot(psd_avg_plt.frequency, psd_avg_plt.values.T, label=psd_avg_plt.coords[channel_coord].values)
     plt.xlim(plt_range)
     plt.yscale('log')
-    plt.legend(loc='upper right', framealpha=0.2, title='channel ID')
+    plt.legend(loc='upper right', framealpha=0.2, title=channel_name)
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Power')
     fig1 = plt.gcf()
 
     if channel_id is None:
-        channel_id = psd_avg.channel[0]
-    print(f'Channel: {channel_id: d}')
-    psd_avg_plt = psd_avg.sel(channel=channel_id)
+        return None, fig1, None
+    print(f'{channel_name:s}: {channel_id}')
+    psd_avg_plt = psd_avg.sel({channel_coord: channel_id})
     results = fit_fooof(psd_avg_plt.frequency.values, psd_avg_plt.values,
                         aperiodic_mode=aperiodic_mode, dB_threshold=dB_threshold, max_n_peaks=max_n_peaks,
                         freq_range=freq_range, peak_width_limits=None, report=True,
