@@ -14,7 +14,7 @@ Functions for analyzing preprocessed data
 
 def fit_fooof(f, pxx, aperiodic_mode='fixed', dB_threshold=3., max_n_peaks=10,
               freq_range=None, peak_width_limits=None, report=False,
-              plot=False, plt_log=False, plt_range=None, figsize=None):
+              plot=False, plt_log=False, plt_range=None, figsize=None, ax=None):
     """Fit PSD using FOOOF"""
     if aperiodic_mode != 'knee':
         aperiodic_mode = 'fixed'
@@ -45,7 +45,7 @@ def fit_fooof(f, pxx, aperiodic_mode='fixed', dB_threshold=3., max_n_peaks=10,
             print(f'Knee location: {knee_freq:.2f} Hz')
     if plot:
         plt_range = set_range(plt_range)
-        fm.plot(plt_log=plt_log)
+        fm.plot(plt_log=plt_log, ax=ax)
         plt.xlim(np.log10(plt_range) if plt_log else plt_range)
         if figsize:
             plt.gcf().set_size_inches(figsize)
@@ -68,33 +68,38 @@ def trial_psd(aligned_lfp, tseg=1.):
     return psd_array
 
 def plot_channel_psd(psd_avg, channel_id=None, channel_coord='channel', channel_name='Channel ID',
-                     freq_range=200., plt_range=(0, 100.), figsize=(5, 4),
+                     freq_range=200., plt_range=(0, 100.), figsize=(5, 4), ax1=None, ax2=None,
                      aperiodic_mode='knee', dB_threshold=3., max_n_peaks=10, plot=True, plt_log=True):
     """Plot PSD at given chennel with FOOOF results"""
     plt_range = np.array(plt_range)
     if plt_range.size == 1:
         plt_range = (0, plt_range.item())
     psd_avg_plt = psd_avg.sel(frequency=slice(*plt_range))
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color',
-        plt.cm.get_cmap('plasma')(np.linspace(0, 1, psd_avg.coords[channel_coord].size)))
-    plt.figure(figsize=figsize)
-    plt.plot(psd_avg_plt.frequency, psd_avg_plt.values.T, label=psd_avg_plt.coords[channel_coord].values)
-    plt.xlim(plt_range)
-    plt.yscale('log')
-    plt.legend(loc='upper right', framealpha=0.2, title=channel_name)
-    plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Power')
-    fig1 = plt.gcf()
+
+    if ax1 is None:
+        _, ax1 = plt.subplots(1, 1, figsize=figsize)
+    ax = ax1
+    fig1 = ax.get_figure()
+    ax.set_prop_cycle(plt.cycler('color', plt.cm.get_cmap('plasma')(
+        np.linspace(0, 1, psd_avg.coords[channel_coord].size))))
+    ax.plot(psd_avg_plt.frequency, psd_avg_plt.values.T, label=psd_avg_plt.coords[channel_coord].values)
+    ax.set_xlim(plt_range)
+    ax.set_yscale('log')
+    ax.legend(loc='upper right', framealpha=0.2, title=channel_name)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Power')
 
     if channel_id is None:
         return None, fig1, None
     print(f'{channel_name:s}: {channel_id}')
     psd_avg_plt = psd_avg.sel({channel_coord: channel_id})
+    if ax2 is None:
+        _, ax2 = plt.subplots(1, 1, figsize=figsize)
+    fig2 = ax2.get_figure()
     results = fit_fooof(psd_avg_plt.frequency.values, psd_avg_plt.values,
                         aperiodic_mode=aperiodic_mode, dB_threshold=dB_threshold, max_n_peaks=max_n_peaks,
                         freq_range=freq_range, peak_width_limits=None, report=True,
-                        plot=plot, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize)
-    fig2 = plt.gcf()
+                        plot=plot, plt_log=plt_log, plt_range=plt_range[1], figsize=figsize, ax=ax2)
     return results, fig1, fig2
 
 def plot_fooof(f, pxx, fooof_result, plt_log=False, plt_range=None, plt_db=True, ax=None):
