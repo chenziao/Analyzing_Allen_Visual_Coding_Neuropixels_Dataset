@@ -139,16 +139,33 @@ def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_gr
     ax.set_yticklabels(yticklabels)
     return pcm
 
-def plot_optotag_units(optotag_df, evoked_ratio_threshold, spike_width_threshold, ax=None):
+def plot_optotag_units(optotag_df, evoked_ratio_threshold=None, ttest_alpha=None,
+                       spike_width_threshold=None, marker_size=3, ax=None):
     """Plot scatter plot of optotag units with evoked ratio and spike width thresholds"""
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    waveform_duration, evoked_ratio = optotag_df['waveform_duration'], optotag_df['evoked_ratio']
+    waveform_duration = optotag_df['waveform_duration']
+    evoked_ratio = optotag_df['evoked_ratio']
+    p_value = optotag_df['p_value']
     positive = optotag_df['positive']
-    ax.plot(waveform_duration[positive], evoked_ratio[positive], 'r.')
-    ax.plot(waveform_duration[~positive], evoked_ratio[~positive], 'b.')
-    ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
-    ax.axvline(spike_width_threshold, linestyle=':', color='k', label='spike width threshold')
+    scales = marker_size * np.clip(-np.log2(p_value), 1, 30)
+    colors = np.array(['b', 'r'])[positive.astype(int)]
+    ax.scatter(waveform_duration, evoked_ratio, s=scales, marker='o', edgecolors=colors, facecolors='none')
+    if evoked_ratio_threshold is not None:
+        ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
+    if spike_width_threshold is not None:
+        ax.axvline(spike_width_threshold, linestyle=':', color='k', label='spike width threshold')
+    xl, yl = ax.get_xlim(), ax.get_ylim()
+    if ttest_alpha is None:
+        label = ''
+        ttest_alpha = 0.5
+    else:
+        label = 't-test alpha'
+    ax.scatter(xl[0] - 1, yl[0] - 1, s=-marker_size * np.log2(ttest_alpha),
+               marker='o', edgecolors='r', facecolors='none', label=label)
+    ax.set_xlim(xl)
+    ax.set_ylim(yl)
     ax.set_xlabel('Waveform duration (ms)')
     ax.set_ylabel('Evoked ratio')
     ax.legend(loc='upper right', framealpha=0.2)
+    return ax

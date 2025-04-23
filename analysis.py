@@ -268,7 +268,7 @@ def plot_channel_spectrogram(sxx_avg, channel_id=None, plt_range=(0, 100.), log_
     plt.tight_layout()
     return axs
 
-def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None, output='ba'):
+def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None, output='ba', include_analytic=False):
     """Filter LFP. Get amplitude and phase using Hilbert transform.
     extend_time: duration at the start and end to avoid boundary effect for filtering.
     """
@@ -287,7 +287,7 @@ def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None, output='ba')
         data_vars = dict(
             LFP = aligned_lfp.LFP.copy(data=filtered),
             amplitude = aligned_lfp.LFP.copy(data=np.abs(analytic)),
-            phase = aligned_lfp.LFP.copy(data=np.angle(analytic)),
+            phase = aligned_lfp.LFP.copy(data=np.angle(analytic))
         ),
         attrs = dict(
             fs = aligned_lfp.fs,
@@ -295,16 +295,23 @@ def bandpass_lfp(aligned_lfp, filt_band, order=4, extend_time=None, output='ba')
             extend_time=extend_time
         )
     )
+    if include_analytic:
+        filtered_lfp = filtered_lfp.assign(analytic = aligned_lfp.LFP.copy(data=analytic))
     return filtered_lfp
 
 def get_spike_phase(spike_times, filtered_lfp, unit_channel, time_window=None):
-    """Get the LFP phase at each spike time. LFP was at the nearest channel to each unit."""
-    unit_ids = unit_channel.index
+    """Get the LFP phase at each spike time.
+    unit_channel: specified channel to each unit at which LFP was used
+    time_window: time window in which spikes are considered
+    """
+    unit_channel = xr.DataArray(unit_channel)
+    unit_ids = unit_channel.get_index('unit_id')
     presentation_ids = filtered_lfp.presentation_id.to_index()
     if time_window is None:
         time_window = (filtered_lfp.time_from_presentation_onset.values[0] + filtered_lfp.extend_time,
                        filtered_lfp.time_from_presentation_onset.values[-1] - filtered_lfp.extend_time)
-    spike_trains = [[[] for _ in range(presentation_ids.size)] for _ in range(unit_ids.size)]
+    spike_trains = np.full((unit_ids.size, presentation_ids.size), None, dtype=object)
+    spike_trains.ravel()[:] = [[] for _ in range(spike_trains.size)]
     for row in spike_times.itertuples(index=False):
         i = unit_ids.get_loc(row.unit_id)
         j = presentation_ids.get_loc(row.stimulus_presentation_id)
@@ -313,24 +320,41 @@ def get_spike_phase(spike_times, filtered_lfp, unit_channel, time_window=None):
             spike_trains[i][j].append(t)
     spike_trains = np.array(spike_trains, dtype=object)
 
-    t0 = filtered_lfp.time_from_presentation_onset.values[0]
-    fs = filtered_lfp.fs
-    resultant_phase = np.zeros(spike_trains.shape, dtype=complex)
+    interpolate = 'analytic' in filtered_lfp  # automatically choose method
+    if not interpolate:
+        t0 = filtered_lfp.time_from_presentation_onset.values[0]
+        fs = filtered_lfp.fs
+    channel_coords = {k: v for k, v in unit_channel.coords.items() if k != 'unit_id'}
+    channel_dims = [k for k in unit_channel.dims if k in channel_coords]
+    channel_shape = tuple(unit_channel.coords[k].size for k in channel_dims)
+    resultant_phase = np.zeros(spike_trains.shape + channel_shape, dtype=complex)
     spike_number = np.zeros(spike_trains.shape, dtype=int)
     for i in range(unit_ids.size):
-        unit_phase = filtered_lfp.phase.sel(channel=unit_channel[unit_ids[i]])
+        channel = unit_channel.sel(unit_id=unit_ids[i]).values
+        if interpolate:
+            unit_analytic = filtered_lfp.analytic.sel(channel=channel)
+        else:
+            unit_phase = filtered_lfp.phase.sel(channel=channel)
         for j in range(presentation_ids.size):
             spike_train = np.array(spike_trains[i, j])
             spike_number[i, j] = spike_train.size
-            t = np.round((spike_train - t0) * fs).astype(int)
-            phase = unit_phase.isel(presentation_id=j, time_from_presentation_onset=t).values
-            resultant_phase[i, j] = np.sum(np.exp(1j * phase))
+            if not spike_train.size:  # no spikes, skip
+                continue
+            if interpolate:  # linear interpolate analytic signal
+                analytic = unit_analytic.isel(presentation_id=j).interp(
+                    time_from_presentation_onset=spike_train, assume_sorted=True)
+                analytic = analytic / np.abs(analytic)  # normalize to unit circle
+            else:  # nearest neighbor of phase
+                t = np.round((spike_train - t0) * fs).astype(int)
+                phase = unit_phase.isel(presentation_id=j, time_from_presentation_onset=t)
+                analytic = np.exp(1j * phase)
+            resultant_phase[i, j] = analytic.sum(dim='time_from_presentation_onset').values
     spike_phase = xr.Dataset(
         data_vars={
             'spike_number': (['unit_id', 'presentation_id'], spike_number),
-            'resultant_phase': (['unit_id', 'presentation_id'], resultant_phase)
+            'resultant_phase': (['unit_id', 'presentation_id', *channel_dims], resultant_phase)
         },
-        coords={'unit_id': unit_ids, 'presentation_id': presentation_ids},
+        coords={'unit_id': unit_ids, 'presentation_id': presentation_ids, **channel_coords},
         attrs={'time_window': time_window}
     )
     return spike_phase
@@ -349,11 +373,13 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
     plv = np.zeros(pha.shape)
     if unbiased:
         plv_ub = np.zeros(pha.shape)
+        ppc = np.zeros(pha.shape)
     idx = np.nonzero(N > 1)
     if unbiased:
             plv2 = (pha[idx] * pha[idx].conj()).real / N[idx]
             plv[idx] = (plv2 / N[idx]) ** 0.5
-            plv_ub[idx] = (np.fmax(plv2 - 1, 0) / (N[idx] - 1)) ** 0.5
+            ppc[idx] = np.fmax(plv2 - 1, 0) / (N[idx] - 1)
+            plv_ub[idx] = ppc[idx] ** 0.5
     else:
         plv[idx] = np.abs(pha[idx]) / N[idx]
     mean_firing_rate = N / ((spike_phase.time_window[1] - spike_phase.time_window[0]) * len(presentation_ids))
@@ -367,7 +393,7 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
         coords=coords, attrs={'angle_unit': 'deg'}
     )
     if unbiased:
-        ds = ds.assign({'PLV_unbiased': (dims, plv_ub)})
+        ds = ds.assign({'PLV_unbiased': (dims, plv_ub), 'PPC': (dims, ppc)})
     return ds
 
 def wave_hilbert(x, freq_band, fs, filt_order=4, axis=-1):
@@ -535,10 +561,20 @@ def statistic_in_quantile_grid(X, Y, n_bins=8, stat=np.mean, stat_fill=np.nan):
     y_stats = np.stack(y_stats, axis=0)
     return y_stats, bins, hist_count
 
-def detect_optotag(optotag_df, evoked_ratio_threshold, spike_width_threshold):
+def detect_optotag(optotag_df, evoked_ratio_threshold=1.5, ttest_alpha=0.05, spike_width_threshold=0.5):
     """Detect optotag units using evoked ratio and spike width threshold from dataframe"""
-    optotag_df['cre_positive'] = optotag_df['evoked_ratio'] > evoked_ratio_threshold
-    optotag_df['low_spike_width'] = optotag_df['waveform_duration'] <= spike_width_threshold
-    optotag_df['positive'] = optotag_df['cre_positive'] & optotag_df['low_spike_width']
+    if evoked_ratio_threshold is None:
+        optotag_df['evoke_positive'] = True
+    else:
+        optotag_df['evoke_positive'] = optotag_df['evoked_ratio'] > evoked_ratio_threshold
+    if ttest_alpha is None:
+        optotag_df['evoke_significant'] = True
+    else:
+        optotag_df['evoke_significant'] = optotag_df['p_value'] < ttest_alpha
+    if spike_width_threshold is None:
+        optotag_df['low_spike_width'] = True
+    else:
+        optotag_df['low_spike_width'] = optotag_df['waveform_duration'] <= spike_width_threshold
+    optotag_df['positive'] = optotag_df['evoke_positive'] & optotag_df['evoke_significant'] & optotag_df['low_spike_width']
     positive_units = optotag_df.index[optotag_df['positive']].values
     return optotag_df, positive_units
