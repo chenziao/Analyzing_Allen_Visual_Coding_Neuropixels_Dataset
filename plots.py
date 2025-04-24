@@ -144,24 +144,27 @@ def plot_optotag_units(optotag_df, evoked_ratio_threshold=None, ttest_alpha=None
     """Plot scatter plot of optotag units with evoked ratio and spike width thresholds"""
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    waveform_duration = optotag_df['waveform_duration']
-    evoked_ratio = optotag_df['evoked_ratio']
-    p_value = optotag_df['p_value']
-    positive = optotag_df['positive']
-    scales = marker_size * np.clip(-np.log2(p_value), 1, 30)
-    colors = np.array(['b', 'r'])[positive.astype(int)]
-    ax.scatter(waveform_duration, evoked_ratio, s=scales, marker='o', edgecolors=colors, facecolors='none')
-    if evoked_ratio_threshold is not None:
-        ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
-    if spike_width_threshold is not None:
-        ax.axvline(spike_width_threshold, linestyle=':', color='k', label='spike width threshold')
-    xl, yl = ax.get_xlim(), ax.get_ylim()
     if ttest_alpha is None:
         label = ''
         ttest_alpha = 0.5
     else:
         label = 't-test alpha'
-    ax.scatter(xl[0] - 1, yl[0] - 1, s=-marker_size * np.log2(ttest_alpha),
+    alpha_size = -marker_size * np.log2(ttest_alpha)
+    if 'p_value' in optotag_df.columns:
+        marker_sizes = marker_size * np.clip(-np.log2(optotag_df['p_value']), 1, 30)
+    else:
+        marker_sizes = alpha_size
+    positive = optotag_df['positive']
+    colors = np.array(['b', 'r'])[positive.astype(int)]
+
+    ax.scatter(optotag_df['waveform_duration'], optotag_df['evoked_ratio'],
+               s=marker_sizes, marker='o', edgecolors=colors, facecolors='none')
+    if evoked_ratio_threshold is not None:
+        ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
+    if spike_width_threshold is not None:
+        ax.axvline(spike_width_threshold, linestyle=':', color='orange', label='spike width threshold')
+    xl, yl = ax.get_xlim(), ax.get_ylim()
+    ax.scatter(xl[0] - 1, yl[0] - 1, s=alpha_size,
                marker='o', edgecolors='r', facecolors='none', label=label)
     ax.set_xlim(xl)
     ax.set_ylim(yl)

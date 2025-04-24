@@ -69,6 +69,43 @@ def presentation_conditions(presentations, condtion_types):
     cond_presentation_id = {c: presentations.index[presentations['stimulus_condition_id'] == c] for c in condition_id.values.ravel()}
     return condition_id, cond_presentation_id
 
+def presentationwise_spike_times(session, stimulus_presentation_ids, unit_ids, window):
+    """Produce a table associating spike times with units and stimulus presentations.
+    This is a substitution for the allensdk function session.get_spike_times_for_presentations()
+    with the difference that this function allows for specifying the time windows for each presentation.
+    Only spikes within the time windows are included. Values are in seconds, relative to onset of each presentation."""
+    # get time windows for each presentation
+    stimulus_presentation_ids = np.asarray(stimulus_presentation_ids).ravel()
+    start_times = session.stimulus_presentations.loc[stimulus_presentation_ids, 'start_time'].values
+    windows = np.broadcast_to(window, (stimulus_presentation_ids.size, 2))
+    windows = start_times[:, None] + windows
+    # get spike times
+    unit_ids = np.asarray(unit_ids).ravel()
+    unit_spks = []
+    for unit_id in unit_ids:
+        spike_times = session.spike_times[unit_id]
+        tspks = []
+        nspks = [0]
+        for win in windows:
+            idx = (spike_times >= win[0]) & (spike_times < win[1])  # spike within window
+            tspks.append(spike_times[idx])
+            nspks.append(nspks[-1] + tspks[-1].size)  # cumulative number of spikes
+        spike_times = np.concatenate(tspks)
+        win_idx = np.empty(spike_times.size, dtype=int)  # index of window for each spike
+        for i, (j1, j2) in enumerate(zip(nspks[:-1], nspks[1:])):
+            win_idx[j1:j2] = i
+        unit_spks.append(pd.DataFrame(
+            data = dict(
+                stimulus_presentation_id=stimulus_presentation_ids[win_idx],
+                unit_id=unit_id,
+                time_since_stimulus_presentation_onset=spike_times - start_times[win_idx]
+            ),
+            index = pd.Index(spike_times, name='spike_time')
+        ))
+    unit_spks = pd.concat(unit_spks)
+    unit_spks = unit_spks.iloc[np.lexsort([unit_spks['unit_id'], unit_spks.index])]
+    return unit_spks
+
 def get_bin_edges(bin_width=0.03, window=(-1.0, 1.0)):
     bin_edges = np.concatenate((np.arange(-bin_width / 2, window[0] - bin_width / 2, -bin_width)[::-1],
                                 np.arange(bin_width / 2, window[1] + bin_width / 2, bin_width)))
