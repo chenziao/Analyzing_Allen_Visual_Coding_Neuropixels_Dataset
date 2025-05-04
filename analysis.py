@@ -570,7 +570,7 @@ def detect_optotag(optotag_df, evoked_ratio_threshold=1.5, ttest_alpha=0.05, spi
     if ttest_alpha is None:
         optotag_df['evoke_significant'] = True
     else:
-        optotag_df['evoke_significant'] = optotag_df['p_value'] < ttest_alpha
+        optotag_df['evoke_significant'] = ~optotag_df['p_value'].isna() & (optotag_df['p_value'] < ttest_alpha)
     if spike_width_threshold is None:
         optotag_df['low_spike_width'] = True
     else:
