@@ -359,12 +359,17 @@ def get_spike_phase(spike_times, filtered_lfp, unit_channel, time_window=None):
     )
     return spike_phase
 
-def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbiased=True):
-    """Calculate phase locking value of each unit under given presentations"""
+def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, time_window=None, unbiased=True):
+    """Calculate phase locking value of each unit under given presentations
+    time_window: time window (start, end) or window length for each presentation"""
     if unit_ids is None:
         unit_ids = spike_phase.unit_id
     if presentation_ids is None:
         presentation_ids = spike_phase.presentation_id
+    if time_window is None:
+        time_window = spike_phase.attrs['time_window']
+    if np.size(time_window) == 1:
+        time_window = np.insert(time_window, 0, 0.)
     spk_pha = spike_phase.sel(unit_id=unit_ids, presentation_id=presentation_ids).sum(dim='presentation_id')
     pha = spk_pha.resultant_phase
     dims, coords = pha.dims, pha.coords
@@ -382,7 +387,7 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, unbia
             plv_ub[idx] = ppc[idx] ** 0.5
     else:
         plv[idx] = np.abs(pha[idx]) / N[idx]
-    mean_firing_rate = N / ((spike_phase.time_window[1] - spike_phase.time_window[0]) * len(presentation_ids))
+    mean_firing_rate = N / ((time_window[1] - time_window[0]) * len(presentation_ids))
 
     ds = xr.Dataset(
         data_vars={

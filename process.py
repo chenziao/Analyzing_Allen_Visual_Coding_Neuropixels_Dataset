@@ -69,6 +69,21 @@ def presentation_conditions(presentations, condtion_types):
     cond_presentation_id = {c: presentations.index[presentations['stimulus_condition_id'] == c] for c in condition_id.values.ravel()}
     return condition_id, cond_presentation_id
 
+def get_condition_map(condition_id, cond_presentation_id):
+    """Convert  map from condition id to cond_presentation id to a single DataArray"""
+    cond_presentation_id = {str(c): list(p) for c, p in cond_presentation_id.items()}
+    cond_map = condition_id.assign_attrs(cond_presentation_id)
+    return cond_map
+
+def filt_condition(cond_map, cond_name, cond_filt):
+    """Extract presentations id with a condition filter"""
+    condition_names = ['orientation', 'temporal_frequency', 'contrast']
+    condition_id_mesh = cond_map.sel({cond_name: cond_filt(cond_map.coords[cond_name])})
+    condition_id_mesh.attrs.clear()
+    condition_id = condition_id_mesh.stack(condition=condition_names)
+    cond_presentation_id = {c: cond_map.attrs[str(c)] for c in condition_id.values}
+    return condition_id, cond_presentation_id
+
 def presentationwise_spike_times(session, stimulus_presentation_ids, unit_ids, window):
     """Produce a table associating spike times with units and stimulus presentations.
     This is a substitution for the allensdk function session.get_spike_times_for_presentations()
