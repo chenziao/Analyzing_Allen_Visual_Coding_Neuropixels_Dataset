@@ -381,10 +381,10 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, time_
         ppc = np.zeros(pha.shape)
     idx = np.nonzero(N > 1)
     if unbiased:
-            plv2 = (pha[idx] * pha[idx].conj()).real / N[idx]
-            plv[idx] = (plv2 / N[idx]) ** 0.5
-            ppc[idx] = np.fmax(plv2 - 1, 0) / (N[idx] - 1)
-            plv_ub[idx] = ppc[idx] ** 0.5
+            plv2n = (pha[idx] * pha[idx].conj()).real / N[idx]  # plv^2 * N
+            plv[idx] = (plv2n / N[idx]) ** 0.5
+            ppc[idx] = (plv2n - 1) / (N[idx] - 1)  # ppc = (plv^2 * N - 1) / (N - 1)
+            plv_ub[idx] = np.fmax(ppc[idx], 0.) ** 0.5  # ensure non-negative
     else:
         plv[idx] = np.abs(pha[idx]) / N[idx]
     mean_firing_rate = N / ((time_window[1] - time_window[0]) * len(presentation_ids))
@@ -393,7 +393,8 @@ def phase_locking_value(spike_phase, unit_ids=None, presentation_ids=None, time_
         data_vars={
             'PLV': (dims, plv),
             'phase': (dims, np.angle(pha, deg=True)),
-            'mean_firing_rate': (dims, mean_firing_rate)
+            'mean_firing_rate': (dims, mean_firing_rate),
+            'spike_number': (dims, N)
         },
         coords=coords, attrs={'angle_unit': 'deg'}
     )
