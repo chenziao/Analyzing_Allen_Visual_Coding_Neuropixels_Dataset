@@ -1,0 +1,5 @@
+allensdk>=2.15.2
+fooof==1.0.0
+scikit-learn
+pywt
+jupyter

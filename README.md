@@ -5,17 +5,9 @@ This repository is for analyzing the public dataset https://allensdk.readthedocs
 
 ## Requirements
 
-python 3.8.16
+python >= 3.10  (legacy: 3.8.16)
 
-allensdk 2.15.2
-
-xarray 2023.1.0
-
-fooof 1.0.0
-
-scikit-learn
-
-## Analysis Procedures
+## Analysis Procedures (Legacy)
 
 1. Edit the [configuration file](config.json) to set directories of `cache_dir` for allensdk data cache, `output_dir` for result data, and `figure_dir` for result figures. Specify properties in `filter_dict` for filtering sessions in the dataset.
 

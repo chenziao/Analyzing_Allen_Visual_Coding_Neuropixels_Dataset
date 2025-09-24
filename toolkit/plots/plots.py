@@ -2,9 +2,10 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.pyplot import Figure, Axes
 
 
-def plot_probe_channel_positions(channels : pd.DataFrame, ax : plt.Axes = None):
+def plot_probe_channel_positions(channels : pd.DataFrame, ax : Axes | None = None):
     """Plot probe channel positions.
 
     Parameters

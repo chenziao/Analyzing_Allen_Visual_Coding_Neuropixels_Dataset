@@ -1,7 +1,8 @@
 import numpy as np
 
+from numpy.typing import ArrayLike
 
-def array_spacing(x):
+def array_spacing(x : ArrayLike) -> float:
     """Get spacing of an evenly spaced array."""
     x = np.asarray(x)
     if x.ndim != 1:

@@ -31,7 +31,7 @@ def bandpass_filter(
         Type of output: numerator/denominator ('ba') or second-order sections ('sos').
         Default is 'ba' for backwards compatibility, but 'sos' should be used for
         general-purpose filtering.
-    time_axis: str | None
+    time_axis: str
         Name of the time dimension (ms). Default is None, which will be inferred from the data.
     include_analytic: bool
         Whether to include analytic signal.
@@ -77,7 +77,7 @@ def compute_csd(
     lfp : xr.DataArray,
     positions : ArrayLike = None,
     sigma_time : float = 1.6,
-    sigma_space : float = 20.0,
+    sigma_space : float = 40.0,
     padding : tuple = (1, 1),
     time_axis : str = 'time',
     channel_axis : str = 'channel'
@@ -98,10 +98,10 @@ def compute_csd(
     positions : ArrayLike
         Positions of channels in µm (must be roughly uniform)
         If not provided, assume the channel dimension is the position.
-    sigma_time : float | None
+    sigma_time : float
         Temporal Gaussian sigma in ms (default 1.6 ms ~ 2 samples at 1250 Hz).
-    sigma_space : float | None
-        Spatial Gaussian sigma in µm (default 20 µm).
+    sigma_space : float
+        Spatial Gaussian sigma in µm (default 40 µm, 1x spacing between channels).
     time_axis : str
         Name of the time dimension. Default is 'time'.
     channel_axis : str
@@ -143,12 +143,19 @@ def compute_csd(
 
     # 3-point 2nd difference
     csd = (xpad[2:] - 2 * xpad[1:-1] + xpad[:-2]) / (dc ** 2)
-    da = lfp.copy(data=np.moveaxis(csd, 0, c_axis))  # move channel axis back to original position
-    da.attrs.update(lfp.attrs | dict(
+    # Move channel axis back to original position
+    csd = np.moveaxis(csd, 0, c_axis)
+
+    # Update coordinates to exclude boundary channels
+    coords = dict(lfp.coords)
+    channel_slice = slice(None if padding[0] else 1, None if padding[1] else -1)
+    coords[channel_axis] = coords[channel_axis][channel_slice]
+
+    # Create DataArray
+    da = xr.DataArray(data=csd, dims=lfp.dims, coords=coords)
+    da.attrs.update(dict(lfp.attrs) | dict(
         fs=fs,
         sigma_time=sigma_time,
         sigma_space=sigma_space
     ))
     return da
-
-

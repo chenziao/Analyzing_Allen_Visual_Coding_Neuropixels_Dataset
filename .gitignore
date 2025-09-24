@@ -12,8 +12,8 @@ x86_64/
 *.jpg
 *.npy
 *.zip
-/tutorial notebook/
-/ecephys_cache_dir/
+
+# Data directories
+/cache/
+/temp/
 /*output*/
-/figures_for_drew/
-/reference_space_cache/

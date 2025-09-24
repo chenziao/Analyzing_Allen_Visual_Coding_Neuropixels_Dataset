@@ -1,0 +1,12 @@
+{
+    "save_figure": false,
+    "figure_format": [
+        "png",
+        "pdf"
+    ],
+    "savefig_kwargs": {
+        "transparent": true,
+        "dpi": 300.0,
+        "bbox_inches": "tight"
+    }
+}

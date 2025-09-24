@@ -1,0 +1,9 @@
+{
+    "cache_base_dir": "cache",
+    "ecephys_cache_dir": "${cache_base_dir}/ecephys_cache_dir",
+    "reference_space_cache_dir": "${cache_base_dir}/reference_space_cache",
+    "processed_data_cache_dir": "${cache_base_dir}/processed_data_cache",
+    "output_base_dir": "output",
+    "results_dir": "${output_base_dir}/results",
+    "figure_dir": "${output_base_dir}/figures"
+}

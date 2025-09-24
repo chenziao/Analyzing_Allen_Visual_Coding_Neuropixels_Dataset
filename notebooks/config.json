@@ -1,19 +1,4 @@
 {
-	"cache_dir": "../ecephys_cache_dir/",
-	"output_dir": "../PCA_output_download",
-	"figure_dir": "../output/figures",
-	"analysis_object": {
-		"session_id": 766640955,
-		"ecephys_structure_acronym": "VISp"
-	},
-	"save_figure": false,
-	"figure_format": [
-		"png",
-		"pdf"
-	],
-	"savefig_kwargs": {
-		"transparent": true,
-		"dpi": 300.0,
-		"bbox_inches": "tight"
-	}
+	"session_id": 766640955,
+	"ecephys_structure_acronym": "VISp"
 }

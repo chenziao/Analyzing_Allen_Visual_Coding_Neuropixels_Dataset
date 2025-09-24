@@ -1,6 +1,30 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from numpy.typing import ArrayLike, NDArray
+
+
+def set_equal_3d_scaling(ax : plt.Axes, x : ArrayLike, y : ArrayLike, z : ArrayLike) -> NDArray[float]:
+    """Set equal scaling for 3D plot in a cubic volume"""
+    # Get current ranges
+    lim = np.array([[np.min(x), np.max(x)],
+                    [np.min(y), np.max(y)],
+                    [np.min(z), np.max(z)]])
+
+    # Calculate centers
+    center = np.mean(lim, axis=1, keepdims=True)
+
+    # Find the cubic range
+    half_range = np.max(lim[:, 1] - lim[:, 0]) / 2
+    cubic_lim = center + half_range * np.array([-1, 1])
+
+    # Set equal ranges around centers
+    ax.set_xlim3d(cubic_lim[0])
+    ax.set_ylim3d(cubic_lim[1])
+    ax.set_zlim3d(cubic_lim[2])
+    ax.set_box_aspect([1, 1, 1])
+    return cubic_lim
+
 
 def lighten(val, clr, light_scale=0.7, dark_scale=0.6):
     """Change color lightness by value between [0, 1]"""
