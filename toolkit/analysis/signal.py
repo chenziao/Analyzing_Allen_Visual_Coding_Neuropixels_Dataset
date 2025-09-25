@@ -14,6 +14,9 @@ def bandpass_filter(
     order : int = 4,
     output : str = 'ba',
     time_axis : str = 'time',
+    include_filtered : bool = True,
+    include_amplitude : bool = False,
+    include_phase : bool = False,
     include_analytic : bool = False
 ) -> xr.Dataset:
     """Filter signal. Get amplitude and phase using Hilbert transform.
@@ -33,6 +36,10 @@ def bandpass_filter(
         general-purpose filtering.
     time_axis: str
         Name of the time dimension (ms). Default is None, which will be inferred from the data.
+    include_amplitude: bool
+        Whether to include amplitude.
+    include_phase: bool
+        Whether to include phase.
     include_analytic: bool
         Whether to include analytic signal.
 
@@ -57,19 +64,25 @@ def bandpass_filter(
     analytic = ss.hilbert(filtered, axis=axis)
 
     # Output
+    data_vars = {}
+    if include_filtered:
+        data_vars['filtered'] = da.copy(data=filtered)
+    if include_amplitude:
+        data_vars['amplitude'] = da.copy(data=np.abs(analytic))
+    if include_phase:
+        data_vars['phase'] = da.copy(data=np.angle(analytic))
+    if include_analytic:
+        data_vars['analytic'] = da.copy(data=analytic)
+    if not data_vars:
+        raise ValueError("No data to include.")
+
     ds = xr.Dataset(
-        data_vars = dict(
-            data = da.copy(data=filtered),
-            amplitude = da.copy(data=np.abs(analytic)),
-            phase = da.copy(data=np.angle(analytic))
-        ),
+        data_vars = data_vars,
         attrs = dict(
             fs = fs,
             filt_band = filt_band
         )
     )
-    if include_analytic:
-        ds = ds.assign(analytic = da.copy(data=analytic))
     return ds
 
 
@@ -92,7 +105,7 @@ def compute_csd(
     Parameters
     ----------
     lfp : xr.DataArray
-        LFP array. DataArray must have time dimension 'time' (ms) and
+        LFP array. DataArray must have time dimension 'time' (s) and
         channel dimension 'channel' (µm) or specified by time_axis and channel_axis.
         Attributes can optionally include 'fs' for sampling frequency in Hz.
     positions : ArrayLike
@@ -118,7 +131,7 @@ def compute_csd(
     if positions is None:
         positions = lfp.coords[channel_axis].values
     dc = array_spacing(positions)  # µm
-    fs = lfp.attrs.get('fs', 1000. / array_spacing(lfp.coords[time_axis]))  # Hz
+    fs = lfp.attrs.get('fs', 1. / array_spacing(lfp.coords[time_axis]))  # Hz
 
     # Optional 2D pre-smoothing
     if sigma_time or sigma_space:

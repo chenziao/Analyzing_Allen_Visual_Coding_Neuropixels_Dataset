@@ -248,3 +248,15 @@ class StructureFinder:
         return structure_acronym, inside_structure
 
 
+def central_channel_in_structure(layer_acronyms : ArrayLike) -> dict[str, int]:
+    """Find the central channel in the structure given an array of layer acronyms for each channel."""
+    layer_acronyms = np.asarray(layer_acronyms, dtype=str)
+    # get unique layer structures preserving order
+    layer_structures = list(dict.fromkeys(layer_acronyms, 0))
+    central_channel_idx = {}
+    for layer_structure in layer_structures:
+        idx = np.nonzero(layer_acronyms == layer_structure)[0]
+        # get middle index (lower index if even number of channels)
+        central_channel_idx[layer_structure] = idx[(len(idx) - 1) // 2]
+    return central_channel_idx
+
