@@ -10,14 +10,29 @@ from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProj
 
 from ..paths import *
 
+if TYPE_CHECKING:
+    from allensdk.brain_observatory.ecephys.ecephys_session import EcephysSession
+
 
 class SessionDirectory:
-    def __init__(self, session_id : int, structure_acronym : str):
-        """Get the cache directory for a given session and structure."""
+    def __init__(self, session_id : int, structure_acronym : str, cache_lfp : bool = False):
+        """Get the cache directory for a given session and structure.
+
+        Parameters
+        ----------
+        session_id : int
+            Ecephys session ID.
+        structure_acronym : str
+            Acronym of the structure of interest.
+        cache_lfp : bool, optional
+            Whether to cache LFP arrays in memory. Each probe consumes 3.75 GB of memory. Default is False.
+        """
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
         self.exist = self._session_dir.exists()
-        self.cache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
-        self.session = self.cache.get_session_data(session_id)
+        self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
+        self.session : EcephysSession = self.cache.get_session_data(session_id)
+        self.cache_lfp = cache_lfp
+        self.lfp_cache : dict[int, xr.DataArray] = {}
 
     @property
     def session_dir(self) -> Path:
@@ -41,11 +56,19 @@ class SessionDirectory:
     def probe_info(self) -> Path:
         return self.session_dir / 'probe_info.json'
 
-    def save_probe_info(self, probe_id : int, central_channels : dict[str, int]) -> None:
-        probe_info = {
-            'probe_id': probe_id,
-            'central_channels': central_channels,
-        }
+    def save_probe_info(
+        self,
+        probe_id : int,
+        central_channels : dict[str, int],
+        csd_channels : list[int],
+        csd_padding : tuple[int, int]
+    ) -> None:
+        probe_info = dict(
+            probe_id = int(probe_id),
+            central_channels = {k: int(v) for k, v in central_channels.items()},
+            csd_channels = [int(v) for v in csd_channels],
+            csd_padding = csd_padding
+        )
         with open(self.probe_info, 'w') as f:
             json.dump(probe_info, f, indent=4)
 
@@ -64,4 +87,31 @@ class SessionDirectory:
     def load_csd(self) -> xr.DataArray:
         return xr.load_dataarray(self.csd)
 
+
+    def get_lfp(self, probe_id : int) -> xr.DataArray:
+        """Get LFP array from allensdk session cache and cache in memory"""
+        if self.cache_lfp and probe_id in self.lfp_cache:
+            return self.lfp_cache[probe_id]
+        lfp_array = self.session.get_lfp(probe_id)
+        probes = self.cache.get_probes()
+        fs = probes.loc[probe_id, 'lfp_sampling_rate']
+        lfp_array.attrs.update(fs=fs)
+        if self.cache_lfp:
+            self.lfp_cache[probe_id] = lfp_array
+        return lfp_array
+
+    def clear_lfp_cache(self) -> None:
+        self.lfp_cache.clear()
+
+    def load_lfp(self, probe_id, channel=None, time=None):
+        """Load LFP array from cache with optional selection of channels and time"""
+        lfp_array = self.get_lfp(probe_id)
+        sel = {}
+        if channel is not None:
+            sel['channel'] = channel
+        if time is not None:
+            sel['time'] = time
+        if sel:
+            lfp_array = lfp_array.sel(**sel)
+        return lfp_array
 

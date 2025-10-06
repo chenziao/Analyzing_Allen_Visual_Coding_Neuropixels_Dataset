@@ -89,6 +89,7 @@ def bandpass_filter(
 def compute_csd(
     lfp : xr.DataArray,
     positions : ArrayLike = None,
+    channel_spacing : float = None,
     sigma_time : float = 1.6,
     sigma_space : float = 40.0,
     padding : tuple = (1, 1),
@@ -108,8 +109,11 @@ def compute_csd(
         LFP array. DataArray must have time dimension 'time' (s) and
         channel dimension 'channel' (µm) or specified by time_axis and channel_axis.
         Attributes can optionally include 'fs' for sampling frequency in Hz.
+    channel_spacing : float
+        Channel spacing in µm assuming evenly spaced.
+        If not provided, use channel positions to calculate spacing.
     positions : ArrayLike
-        Positions of channels in µm (must be roughly uniform)
+        Positions of channels in µm (must be evenly spaced)
         If not provided, assume the channel dimension is the position.
     sigma_time : float
         Temporal Gaussian sigma in ms (default 1.6 ms ~ 2 samples at 1250 Hz).
@@ -128,14 +132,19 @@ def compute_csd(
     """
     c_axis = lfp.dims.index(channel_axis)
     t_axis = lfp.dims.index(time_axis)
-    if positions is None:
-        positions = lfp.coords[channel_axis].values
-    dc = array_spacing(positions)  # µm
+    if channel_spacing is None:
+        if positions is None:
+            positions = lfp.coords[channel_axis].values
+        channel_spacing = array_spacing(positions)  # µm
+        if not np.allclose(np.diff(positions), channel_spacing):
+            raise ValueError('The LFP channels are not evenly spaced.')
+    else:
+        channel_spacing = float(channel_spacing)
     fs = lfp.attrs.get('fs', 1. / array_spacing(lfp.coords[time_axis]))  # Hz
 
     # Optional 2D pre-smoothing
     if sigma_time or sigma_space:
-        sigma_c = (sigma_space / dc) if sigma_space else 0.0
+        sigma_c = (sigma_space / channel_spacing) if sigma_space else 0.0
         sigma_t = (sigma_time / 1000.0) * fs if sigma_time else 0.0
         sigma = [0] * lfp.ndim
         sigma[c_axis] = sigma_c
@@ -155,7 +164,7 @@ def compute_csd(
         xpad = x
 
     # 3-point 2nd difference
-    csd = (xpad[2:] - 2 * xpad[1:-1] + xpad[:-2]) / (dc ** 2)
+    csd = (xpad[2:] - 2 * xpad[1:-1] + xpad[:-2]) / (channel_spacing ** 2)
     # Move channel axis back to original position
     csd = np.moveaxis(csd, 0, c_axis)
 
@@ -168,7 +177,9 @@ def compute_csd(
     da = xr.DataArray(data=csd, dims=lfp.dims, coords=coords)
     da.attrs.update(dict(lfp.attrs) | dict(
         fs=fs,
+        channel_spacing=channel_spacing,
         sigma_time=sigma_time,
-        sigma_space=sigma_space
+        sigma_space=sigma_space,
+        padding=padding
     ))
     return da
