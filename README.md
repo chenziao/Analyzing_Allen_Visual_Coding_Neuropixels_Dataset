@@ -7,6 +7,39 @@ This repository is for analyzing the public dataset https://allensdk.readthedocs
 
 python >= 3.10  (legacy: 3.8.16)
 
+Requires Anaconda (conda). Create and use a dedicated environment:
+
+```bash
+# create env with Python >=3.10 and the Anaconda metapackage
+conda create -n allen python=3.10 anaconda -y
+
+# activate the environment
+conda activate allen
+
+# install project dependencies into the conda env
+pip install -r requirements.txt
+```
+
+## Modules
+
+- [Notebooks](notebooks): Jupyter notebooks for analyzing and visualizing.
+
+- [Scripts](scripts): Scripts for batch processing with automated pipeline.
+
+- [Tools](tools): Test notebooks for developing tool functions.
+
+- [Toolkit](toolkit): Function modules for this repo.
+
+- [Docs](docs): Documentation for this repo.
+
+- [Legacy](legacy): Legacy code for this repo.
+
+## Configuration
+
+- [path_config.json](path_config.json): Set the paths for the cache data and output data.
+
+- [output_config.json](output_config.json): Set the format for the output data.
+
 ## Analysis Procedures (Legacy)
 
 1. Edit the [configuration file](config.json) to set directories of `cache_dir` for allensdk data cache, `output_dir` for result data, and `figure_dir` for result figures. Specify properties in `filter_dict` for filtering sessions in the dataset.
