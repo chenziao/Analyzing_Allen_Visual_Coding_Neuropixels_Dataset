@@ -27,6 +27,7 @@ def align_trials(
     inds = pd.MultiIndex.from_product((presentation_ids, trial_window / signal_array.fs),
                                        names=('presentation_id', 'time_from_presentation_onset'))
     aligned_signal = aligned_signal.assign_coords(time=inds).unstack('time')
+    aligned_signal.attrs.update(signal_array.attrs)
     return aligned_signal
 
 

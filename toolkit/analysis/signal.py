@@ -102,11 +102,12 @@ def compute_csd(
     - Replicate padding for δ-Source iCSD boundaries (https://www.sciencedirect.com/science/article/abs/pii/S0165027005004541).
     - Optional 2D Gaussian pre-smoothing across space (channels) and time.
     - Uses 3-point finite difference along depth.
+    - Returns CSD in μV/mm² units (converted from V/µm²).
 
     Parameters
     ----------
     lfp : xr.DataArray
-        LFP array. DataArray must have time dimension 'time' (s) and
+        LFP array (V). DataArray must have time dimension 'time' (s) and
         channel dimension 'channel' (µm) or specified by time_axis and channel_axis.
         Attributes can optionally include 'fs' for sampling frequency in Hz.
     channel_spacing : float
@@ -127,8 +128,8 @@ def compute_csd(
     Returns
     -------
     da: xr.DataArray
-        DataArray with CSD.
-        Attributes include 'fs', 'sigma_time', and 'sigma_space'.
+        DataArray with CSD in μV/mm² units.
+        Attributes include 'fs', 'sigma_time', 'sigma_space', and 'units'.
     """
     c_axis = lfp.dims.index(channel_axis)
     t_axis = lfp.dims.index(time_axis)
@@ -165,6 +166,8 @@ def compute_csd(
 
     # 3-point 2nd difference
     csd = (xpad[2:] - 2 * xpad[1:-1] + xpad[:-2]) / (channel_spacing ** 2)
+    csd *= 1e12  # Convert V/µm² to μV/mm²
+    
     # Move channel axis back to original position
     csd = np.moveaxis(csd, 0, c_axis)
 
@@ -180,6 +183,7 @@ def compute_csd(
         channel_spacing=channel_spacing,
         sigma_time=sigma_time,
         sigma_space=sigma_space,
-        padding=padding
+        padding=padding,
+        unit='μV/mm²'
     ))
     return da

@@ -63,6 +63,19 @@ class SessionDirectory:
         csd_channels : list[int],
         csd_padding : tuple[int, int]
     ) -> None:
+        """Save probe information to a JSON file.
+        
+        Parameters
+        ----------
+        probe_id : int
+            Probe ID.
+        central_channels : dict[str, int]
+            Layer structure acronym: ID of Central channels in the layer.
+        csd_channels : list[int]
+            Channels used for CSD calculation.
+        csd_padding : tuple[int, int]
+            Padding used for CSD calculation.
+        """
         probe_info = dict(
             probe_id = int(probe_id),
             central_channels = {k: int(v) for k, v in central_channels.items()},
@@ -85,17 +98,35 @@ class SessionDirectory:
         csd_array.to_netcdf(self.csd)
 
     def load_csd(self) -> xr.DataArray:
+        """Load CSD array from cache.
+        
+        Returns
+        -------
+        xr.DataArray
+            CSD data. Unit: μV/mm²
+        """
         return xr.load_dataarray(self.csd)
 
 
     def get_lfp(self, probe_id : int) -> xr.DataArray:
-        """Get LFP array from allensdk session cache and cache in memory"""
+        """Get LFP array from allensdk session cache and cache in memory.
+
+        Parameters
+        ----------
+        probe_id : int
+            Probe ID.
+
+        Returns
+        -------
+        xr.DataArray
+            LFP data. Unit: V
+        """
         if self.cache_lfp and probe_id in self.lfp_cache:
             return self.lfp_cache[probe_id]
         lfp_array = self.session.get_lfp(probe_id)
         probes = self.cache.get_probes()
         fs = probes.loc[probe_id, 'lfp_sampling_rate']
-        lfp_array.attrs.update(fs=fs)
+        lfp_array.attrs.update(fs=fs, unit='V')
         if self.cache_lfp:
             self.lfp_cache[probe_id] = lfp_array
         return lfp_array
@@ -104,7 +135,22 @@ class SessionDirectory:
         self.lfp_cache.clear()
 
     def load_lfp(self, probe_id, channel=None, time=None):
-        """Load LFP array from cache with optional selection of channels and time"""
+        """Load LFP array from cache with optional selection of channels and time.
+
+        Parameters
+        ----------
+        probe_id : int
+            Probe ID.
+        channel : list[int], optional
+            Channels to load.
+        time : list[int], optional
+            Time to load.
+
+        Returns
+        -------
+        xr.DataArray
+            LFP data. Unit: V
+        """
         lfp_array = self.get_lfp(probe_id)
         sel = {}
         if channel is not None:

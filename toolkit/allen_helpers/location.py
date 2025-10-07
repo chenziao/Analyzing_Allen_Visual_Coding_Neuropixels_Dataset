@@ -231,24 +231,29 @@ class StructureFinder:
 
         Returns
         -------
-        structure_acronym : list[str]
-            list of structure acronyms (empty string if not a structure).
+        layer_acronym : list[str]
+            list of layer structure acronyms (empty string if not a structure)
+            with parent structure acronym removed.
         inside_structure : list[bool]
             A boolean array indicating whether the structure is inside the cortical structure.
         """
         ccf_idx = self.world_um_to_idx(coords).T  # (coordinates, locations)
         structure_array = self.tree.get_structures_by_id(self.annotation[tuple(ccf_idx)])
-        structure_acronym = [s['acronym'] if s else '' for s in structure_array]
+        layer_acronym = [s['acronym'] if s else '' for s in structure_array]
 
         structure_id = self.structure['id']
+        structure_acronym = self.structure['acronym']
         inside_structure = []
-        for s in structure_array:
+        for i, s in enumerate(structure_array):
             parent_id = -1 if s is None else self.tree.parents([s['id']])[0]['id']
-            inside_structure.append(parent_id == structure_id)
-        return structure_acronym, inside_structure
+            inside = parent_id == structure_id
+            inside_structure.append(inside)
+            if inside:
+                layer_acronym[i] = layer_acronym[i].removeprefix(structure_acronym)
+        return layer_acronym, inside_structure
 
 
-def central_channel_in_structure(layer_acronyms : ArrayLike) -> dict[str, int]:
+def central_channel_in_structure(layer_acronyms : ArrayLike, structure_acronym : str = 'VISp') -> dict[str, int]:
     """Find the central channel in the structure given an array of layer acronyms for each channel."""
     layer_acronyms = np.asarray(layer_acronyms, dtype=str)
     # get unique layer structures preserving order
