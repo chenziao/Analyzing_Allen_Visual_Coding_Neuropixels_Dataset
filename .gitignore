@@ -1,6 +1,7 @@
 __pycache__/
 .ipynb_checkpoints/
 x86_64/
+.conda-auto-env
 *.dll
 *.o
 *.c

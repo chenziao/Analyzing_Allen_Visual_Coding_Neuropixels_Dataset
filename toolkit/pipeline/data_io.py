@@ -8,6 +8,8 @@ import pandas as pd
 import xarray as xr
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
+from ..utils.units import convert_unit, units_equal
+
 from ..paths import *
 
 if TYPE_CHECKING:
@@ -103,7 +105,7 @@ class SessionDirectory:
         Returns
         -------
         xr.DataArray
-            CSD data. Unit: μV/mm²
+            CSD data. Unit: uV/mm**2
         """
         return xr.load_dataarray(self.csd)
 
@@ -134,7 +136,7 @@ class SessionDirectory:
     def clear_lfp_cache(self) -> None:
         self.lfp_cache.clear()
 
-    def load_lfp(self, probe_id, channel=None, time=None):
+    def load_lfp(self, probe_id, channel=None, time=None, unit='uV'):
         """Load LFP array from cache with optional selection of channels and time.
 
         Parameters
@@ -149,7 +151,7 @@ class SessionDirectory:
         Returns
         -------
         xr.DataArray
-            LFP data. Unit: V
+            LFP data. Unit: uV
         """
         lfp_array = self.get_lfp(probe_id)
         sel = {}
@@ -159,5 +161,8 @@ class SessionDirectory:
             sel['time'] = time
         if sel:
             lfp_array = lfp_array.sel(**sel)
+        src_unit = lfp_array.attrs['unit']
+        if not units_equal(src_unit, unit):
+            lfp_array = convert_unit(lfp_array, src_unit, unit, copy=False)
         return lfp_array
 
