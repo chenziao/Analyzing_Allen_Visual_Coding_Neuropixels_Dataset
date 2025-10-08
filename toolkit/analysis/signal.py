@@ -4,7 +4,7 @@ import scipy.signal as ss
 from scipy.ndimage import gaussian_filter
 
 from .utils import array_spacing
-from ..utils.units import convert_unit, str_to_unit, unit_to_str
+from ..utils.quantity_units import convert_unit, as_quantity, as_string
 
 from numpy.typing import ArrayLike
 
@@ -100,7 +100,7 @@ def compute_csd(
 
     # Create DataArray
     da = xr.DataArray(data=csd, dims=lfp.dims, coords=coords)
-    da = convert_unit(da, 'V/um**2', 'uV/mm**2', copy=False)
+    da = convert_unit(da, 'V/um**2', 'uV/mm**2')
     da.attrs.update(dict(lfp.attrs) | dict(
         fs=fs,
         channel_spacing=channel_spacing,
@@ -198,5 +198,5 @@ def bandpass_power(filtered_ds : xr.Dataset) -> xr.DataArray:
             raise ValueError("Amplitude not found in the input dataset.")
     power = amplitude ** 2 / 2
     power.attrs.update(filtered_ds.attrs)
-    power.attrs['unit'] = unit_to_str(str_to_unit(power.attrs['unit']) ** 2)
+    power.attrs['unit'] = as_string(as_quantity(power.attrs['unit']) ** 2)
     return power

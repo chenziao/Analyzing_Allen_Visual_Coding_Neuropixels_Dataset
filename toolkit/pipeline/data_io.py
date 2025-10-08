@@ -8,7 +8,7 @@ import pandas as pd
 import xarray as xr
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
-from ..utils.units import convert_unit, units_equal
+from ..utils.quantity_units import convert_unit, units_equal
 
 from ..paths import *
 
