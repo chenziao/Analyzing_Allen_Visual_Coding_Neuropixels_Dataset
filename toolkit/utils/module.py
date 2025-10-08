@@ -5,7 +5,7 @@ from typing import Any
 
 
 def reload_module(module_name : str | ModuleType, *variable_names : str) -> ModuleType | Any | tuple[Any, ...]:
-    """Reload a module in runtime.
+    """Reload a module in runtime (useful for development and debugging).
 
     Parameters
     ----------

@@ -9,7 +9,6 @@ import xarray as xr
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
 from ..utils.quantity_units import convert_unit, units_equal
-
 from ..paths import *
 
 if TYPE_CHECKING:
@@ -28,12 +27,23 @@ class SessionDirectory:
             Acronym of the structure of interest.
         cache_lfp : bool, optional
             Whether to cache LFP arrays in memory. Each probe consumes 3.75 GB of memory. Default is False.
+
+        Attributes
+        ----------
+        session_dir : Path
+            Path to the session directory.
+        cache : EcephysProjectCache
+            EcephysProjectCache object.
+        session : EcephysSession
+            EcephysSession object.
+        lfp_cache : dict[int, xr.DataArray]
+            Dictionary of {probe_id: cached LFP arrays}.
         """
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
         self.exist = self._session_dir.exists()
         self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
         self.session : EcephysSession = self.cache.get_session_data(session_id)
-        self.cache_lfp = cache_lfp
+        self._cache_lfp = cache_lfp
         self.lfp_cache : dict[int, xr.DataArray] = {}
 
     @property
@@ -123,13 +133,13 @@ class SessionDirectory:
         xr.DataArray
             LFP data. Unit: V
         """
-        if self.cache_lfp and probe_id in self.lfp_cache:
+        if self._cache_lfp and probe_id in self.lfp_cache:
             return self.lfp_cache[probe_id]
         lfp_array = self.session.get_lfp(probe_id)
         probes = self.cache.get_probes()
         fs = probes.loc[probe_id, 'lfp_sampling_rate']
         lfp_array.attrs.update(fs=fs, unit='V')
-        if self.cache_lfp:
+        if self._cache_lfp:
             self.lfp_cache[probe_id] = lfp_array
         return lfp_array
 
