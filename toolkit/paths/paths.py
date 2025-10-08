@@ -1,10 +1,13 @@
 from pathlib import Path
 from .path_config_resolver import PathConfigResolver
 
-# Load path configuration
-PATH_CONFIG_FILE = Path(__file__).parents[2] / 'path_config.json'
-resolver = PathConfigResolver(config_file=PATH_CONFIG_FILE)
 
+# Root directory of source code
+ROOT_DIR = Path(__file__).parents[2]
+
+# Load path configuration
+PATH_CONFIG_FILE = ROOT_DIR / 'path_config.json'
+resolver = PathConfigResolver(config_file=PATH_CONFIG_FILE)
 
 # Cache directories
 CACHE_BASE_DIR = resolver.get_path('cache_base_dir')
@@ -18,6 +21,9 @@ OUTPUT_BASE_DIR = resolver.get_path('output_base_dir')
 RESULTS_DIR = resolver.get_path('results_dir')
 FIGURE_DIR = resolver.get_path('figure_dir')
 
+# Output configuration
+OUTPUT_CONFIG_FILE = ROOT_DIR / 'output_config.json'
+
 
 __all__ = [
     'CACHE_BASE_DIR',
@@ -27,5 +33,6 @@ __all__ = [
     'PROCESSED_DATA_CACHE_DIR',
     'OUTPUT_BASE_DIR',
     'RESULTS_DIR',
-    'FIGURE_DIR'
+    'FIGURE_DIR',
+    'OUTPUT_CONFIG_FILE'
 ]

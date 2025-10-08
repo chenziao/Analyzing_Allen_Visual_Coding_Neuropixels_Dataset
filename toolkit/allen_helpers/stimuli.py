@@ -2,6 +2,8 @@
 Functions for preprocessing data obtained from allensdk
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -104,6 +106,11 @@ def initial_spontaneous_window(
     return window
 
 
+ALIGN_FUNCTIONS = {
+    'flashes': align_flashes,
+}
+
+
 # General processing functions
 
 def align_trials(
@@ -123,6 +130,19 @@ def align_trials(
                                        names=('presentation_id', 'time_from_presentation_onset'))
     aligned_signal = aligned_signal.assign_coords(time=inds).unstack('time')
     aligned_signal.attrs.update(signal_array.attrs)
+    return aligned_signal
+
+
+def align_trials_from_blocks(
+    signal_array : xr.DataArray | xr.Dataset,
+    stimulus_blocks : list[StimulusBlock],
+    window : tuple[float, float] = (0., 1.)
+) -> xr.DataArray:
+    """Extract and align signal to time window relative to stimulus onset in given blocks"""
+    aligned_signals = []
+    for stimulus_block in stimulus_blocks:
+        aligned_signals.append(align_trials(signal_array, stimulus_block.ids, stimulus_block.times, window))
+    aligned_signal = xr.concat(aligned_signals, dim='presentation_id', combine_attrs='override')
     return aligned_signal
 
 

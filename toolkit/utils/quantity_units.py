@@ -117,3 +117,22 @@ def convert_unit(
         x.attrs['unit'] = dst_unit
     return x
 
+
+class DisplayUnit:
+    """Display unit for plots."""
+    def __init__(self, format : str = 'unicode'):
+        match format:
+            case 'unicode':
+                self.display = as_unicode
+            case 'latex':
+                self.display = as_latex
+            case 'string':
+                self.display = as_string
+            case _:
+                raise ValueError(f"Invalid format: {format}")
+
+    def __getattr__(self, unit : str) -> str:
+        return self.display(unit)
+
+    def __getitem__(self, unit : str | UnitQuantity) -> str:
+        return self.display(unit)

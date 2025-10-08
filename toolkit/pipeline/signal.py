@@ -53,6 +53,6 @@ def bandpass_filter_blocks(
             da.sel({time_dim: slice(*block_window)}), freq_band, **kwargs
         ))
     if concat:
-        filtered_blocks = xr.concat(filtered_blocks, dim=time_dim)
+        filtered_blocks = xr.concat(filtered_blocks, dim=time_dim, combine_attrs='override')
         filtered_blocks.attrs['extend_time'] = extend_time
     return filtered_blocks
