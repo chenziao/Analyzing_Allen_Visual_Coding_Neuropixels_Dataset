@@ -14,6 +14,19 @@ from numpy.typing import NDArray
 
 @dataclass
 class StimulusTrials:
+    """Stimulus trials containing trial information
+
+    Attributes
+    ----------
+    presentations: pd.DataFrame
+        Stimulus presentations dataframe.
+    ids: NDArray[int]
+        presentations IDs for each trial.
+    times: NDArray[float]
+        Onset times for each trial.
+    duration: float
+        Median duration for each trial.
+    """
     presentations: pd.DataFrame
     ids: NDArray[int]
     times: NDArray[float]
@@ -87,16 +100,19 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
 # map stimulus name to function to get stimulus trials
 
 ALIGN_FUNCTIONS = dict(
+    # Common stimuli
     flashes = get_flashes_trials,
+    # Brain Observatory 1.1
     drifting_gratings = get_gratings_trials,
     natural_movie_three = get_movie_trials,
     natural_movie_one = get_movie_trials,
     static_gratings = get_gratings_trials,
     natural_scenes = get_scenes_trials,
+    # Functional Connectivity
     drifting_gratings_contrast = get_gratings_trials,
+    drifting_gratings_75_repeats = get_gratings_trials,
     natural_movie_one_more_repeats = get_movie_trials,
-    natural_movie_one_shuffled = get_movie_trials,
-    drifting_gratings_75_repeats = get_gratings_trials
+    natural_movie_one_shuffled = get_movie_trials
 )
 
 def get_stimulus_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str) -> StimulusTrials:
@@ -104,12 +120,20 @@ def get_stimulus_trials(stimulus_presentations : pd.DataFrame, stimulus_name : s
     get_trials = ALIGN_FUNCTIONS.get(stimulus_name)
     if get_trials is None:
         raise ValueError(f"Stimulus type '{stimulus_name}' not supported.")
-    return get_trials(stimulus_presentations)
+    return get_trials(stimulus_presentations, stimulus_name=stimulus_name)
 
 
 @dataclass
 class StimulusBlock(StimulusTrials):
-    """Stimulus block containing trial information and additional block-specific attributes"""
+    """Stimulus block containing trial information and additional block-specific attributes
+    
+    Attributes
+    ----------
+    block_id: int
+        Block ID.
+    block_window: tuple[float, float]
+        Block time window (start, end).
+    """
     block_id: int
     block_window: tuple[float, float]
 
@@ -184,16 +208,31 @@ def align_trials(
     signal_array : xr.DataArray | xr.Dataset,
     stimulus_trials : StimulusTrials,
     window : tuple[float, float] = (0., 1.)
-) -> xr.DataArray:
-    """Extract and align signal to time window relative to stimulus onset in given presentations"""
-    fs = signal_array.fs
-    window_idx = int(np.floor(window[0] *fs)), int(np.ceil(window[1] * fs))
+) -> xr.DataArray | xr.Dataset:
+    """Extract and align signal to time window relative to stimulus onset in given presentations
+    
+    Parameters
+    ----------
+    signal_array : xr.DataArray | xr.Dataset
+        Signal array. Attributes must include 'fs'.
+    stimulus_trials : StimulusTrials
+        Stimulus trials.
+    window : tuple[float, float]
+        Window relative to stimulus onset to extract and align signal to.
+
+    Returns
+    -------
+    aligned_signal : xr.DataArray | xr.Dataset
+        Aligned signal. Dimension: presentation_id, time_from_presentation_onset.
+    """
+    fs = signal_array.attrs['fs']
+    window_idx = int(np.floor(window[0] * fs)), int(np.ceil(window[1] * fs))
     trial_window = np.arange(window_idx[0], window_idx[1])
     onset_indices = signal_array.get_index('time').get_indexer(stimulus_trials.times, method='nearest')
     time_selection = np.concatenate([trial_window + t for t in onset_indices])
     aligned_signal = signal_array.isel(time=time_selection)
     inds = pd.MultiIndex.from_product(
-        (stimulus_trials.ids, trial_window / signal_array.fs),
+        (stimulus_trials.ids, trial_window / fs),
         names=('presentation_id', 'time_from_presentation_onset')
     )
     aligned_signal = aligned_signal.assign_coords(time=inds).unstack('time')
@@ -205,8 +244,10 @@ def align_trials_from_blocks(
     signal_array : xr.DataArray | xr.Dataset,
     stimulus_blocks : list[StimulusBlock],
     window : tuple[float, float] = (0., 1.)
-) -> xr.DataArray:
-    """Extract and align signal to time window relative to stimulus onset in given blocks"""
+) -> xr.DataArray | xr.Dataset:
+    """Extract and align signal to time window relative to stimulus onset in given blocks.
+    Similar to `align_trials()`, but for multiple blocks.
+    """
     aligned_signals = []
     for stimulus_block in stimulus_blocks:
         aligned_signals.append(align_trials(signal_array, stimulus_block, window))

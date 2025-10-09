@@ -135,10 +135,12 @@ class SessionDirectory:
         """
         if self._cache_lfp and probe_id in self.lfp_cache:
             return self.lfp_cache[probe_id]
+
         lfp_array = self.session.get_lfp(probe_id)
         probes = self.cache.get_probes()
         fs = probes.loc[probe_id, 'lfp_sampling_rate']
         lfp_array.attrs.update(fs=fs, unit='V')
+
         if self._cache_lfp:
             self.lfp_cache[probe_id] = lfp_array
         return lfp_array
@@ -176,3 +178,14 @@ class SessionDirectory:
             lfp_array = convert_unit(lfp_array, src_unit, unit, copy=False)
         return lfp_array
 
+    def probe_lfp_channels(self, probe_id : int) -> pd.DataFrame:
+        """Load channels for a given probe.
+        
+        Parameters
+        ----------
+        probe_id : int
+            Probe ID.
+        """
+        channels = self.session.channels.loc[self.get_lfp(probe_id).channel]
+        # ensure sorted by vertical position
+        return channels.sort_values('probe_vertical_position')
