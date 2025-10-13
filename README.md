@@ -40,6 +40,22 @@ pip install -r requirements.txt
 
 - [output_config.json](output_config.json): Set the format for the output data.
 
+## Analysis Procedures
+
+### Scripts (for batch processing)
+
+TBA
+
+### Notebooks (for interactive analysis and visualization)
+
+- [Find_Probe_Channels](notebooks/Find_Probe_Channels.ipynb)
+
+  Initial processing before analyzing a session. Find the LFP channels in the selected cortical structure and get the central channels in each layer.
+
+- [CSD_during_stimuli](notebooks/CSD_during_stimuli.ipynb)
+
+  Analyze the CSD during stimuli.
+
 ## Analysis Procedures (Legacy)
 
 1. Edit the [configuration file](config.json) to set directories of `cache_dir` for allensdk data cache, `output_dir` for result data, and `figure_dir` for result figures. Specify properties in `filter_dict` for filtering sessions in the dataset.
