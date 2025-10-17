@@ -206,8 +206,7 @@ class StructureFinder:
         ax.legend()
         ax.set_title(f'{hemisphere.capitalize()} {self.structure_acronym} Cortex'.title())
 
-        data_lim = ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()
-        data_lim = set_equal_3d_scaling(ax, *data_lim)
+        data_lim = set_equal_3d_scaling(ax)
 
         ax.set_ylim3d(data_lim[1][::-1])  # flip DV
         ax.set_zlim3d(data_lim[2][::-1])  # flip ML

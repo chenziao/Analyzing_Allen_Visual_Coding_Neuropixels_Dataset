@@ -4,26 +4,27 @@ import matplotlib.pyplot as plt
 from numpy.typing import ArrayLike, NDArray
 
 
-def set_equal_3d_scaling(ax : plt.Axes, x : ArrayLike, y : ArrayLike, z : ArrayLike) -> NDArray[float]:
-    """Set equal scaling for 3D plot in a cubic volume"""
+def set_equal_3d_scaling(ax : plt.Axes) -> NDArray[float]:
+    """Set equal scaling for 3D plot in a cubic volume
+
+    Returns
+    -------
+    limits : NDArray[float]
+        Limits of the axes. Shape: (3, 2).
+    """
     # Get current ranges
-    lim = np.array([[np.min(x), np.max(x)],
-                    [np.min(y), np.max(y)],
-                    [np.min(z), np.max(z)]])
-
+    limits = np.array([ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()])
     # Calculate centers
-    center = np.mean(lim, axis=1, keepdims=True)
-
-    # Find the cubic range
-    half_range = np.max(lim[:, 1] - lim[:, 0]) / 2
-    cubic_lim = center + half_range * np.array([-1, 1])
-
-    # Set equal ranges around centers
-    ax.set_xlim3d(cubic_lim[0])
-    ax.set_ylim3d(cubic_lim[1])
-    ax.set_zlim3d(cubic_lim[2])
+    center = np.mean(limits, axis=1, keepdims=True)
+    # Calculate cubic range
+    half_range = np.max(limits[:, 1] - limits[:, 0]) / 2
+    limits = center + half_range * np.array([-1, 1])
+    # Set limits
+    ax.set_xlim3d(limits[0])
+    ax.set_ylim3d(limits[1])
+    ax.set_zlim3d(limits[2])
     ax.set_box_aspect([1, 1, 1])
-    return cubic_lim
+    return limits
 
 
 def lighten(val, clr, light_scale=0.7, dark_scale=0.6):
