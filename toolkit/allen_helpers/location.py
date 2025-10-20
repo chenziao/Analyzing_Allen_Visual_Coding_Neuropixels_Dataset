@@ -175,7 +175,7 @@ class StructureFinder:
         scatter_prop = scatter_density * (self.voxel / 1000.) ** 3  # proportion of voxels to plot
 
         # Create colors dictionary using colormap
-        jet = plt.cm.get_cmap(colormap, len(self.layer_structures))
+        jet = plt.get_cmap(colormap, len(self.layer_structures))
         colors = {acr: jet(i) for i, acr in enumerate(self.layer_structures)}
 
         # Get annotation

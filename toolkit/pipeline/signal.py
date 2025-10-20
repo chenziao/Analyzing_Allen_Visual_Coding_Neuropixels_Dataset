@@ -8,6 +8,7 @@ import scipy.signal as ss
 import warnings
 
 from ..analysis.signal import bandpass_filter
+from ..utils.quantity_units import as_quantity, as_string
 
 from numpy.typing import ArrayLike
 
@@ -115,7 +116,12 @@ def get_lfp_channel_groups(
     return lfp_groups, channel_groups
 
 
-def trial_psd(aligned_signal : xr.DataArray, tseg : float = 1., time_dim : str = 'time_from_presentation_onset'):
+def trial_psd(
+    aligned_signal : xr.DataArray,
+    tseg : float = 1.,
+    df : float | None = None,
+    time_dim : str = 'time_from_presentation_onset'
+) -> xr.DataArray:
     """Calculate PSD from aligned signal using Welch method
     
     Parameters
@@ -123,23 +129,51 @@ def trial_psd(aligned_signal : xr.DataArray, tseg : float = 1., time_dim : str =
     aligned_signal : xr.DataArray
         Aligned signal. Attributes must include 'fs'.
     tseg : float
-        Segment duration.
+        Segment duration in seconds.
+    df : float | None
+        Frequency resolution in Hz. If None, use frequency resolution around 1/tseg.
     time_dim : str
-        Name of the time dimension.
+        Name of the time dimension in seconds.
+
+    Returns
+    -------
+    xr.DataArray
+        Dimension: dimension 'time_from_presentation_onset' of aligned_signal is replaced by 'frequency'.
+        Attributes:
+        - 'fs': sampling frequency
+        - 'nperseg': number of samples per segment for Welch method
+        - 'nfft': number of FFT points for Welch method
+        - 'n_dropped': number of samples dropped by Welch method from the last segment
+        - 'unit': unit of the signal squared per Hertz
     """
     coords = dict(aligned_signal.coords)
     dims = list(aligned_signal.dims)
     time_axis = dims.index(time_dim)
 
     fs = aligned_signal.attrs['fs']
-    trial_duration = aligned_signal.coords[time_dim][-1] - aligned_signal.coords[time_dim][0]    
-    nperseg = int(np.ceil(trial_duration / max(np.round(trial_duration / tseg), 1) * fs))
-    f, pxx = ss.welch(aligned_signal, fs=fs, nperseg=nperseg, axis=time_axis)
+    trial_duration = aligned_signal.coords[time_dim][-1] - aligned_signal.coords[time_dim][0]
+    nseg = max(np.round(trial_duration / tseg).astype(int).item(), 1)
+    # take floor to avoid dropping too many samples by welch method
+    nperseg = aligned_signal.coords[time_dim].size // nseg
+    n_dropped = aligned_signal.coords[time_dim].size - nperseg * nseg
+    if df is None:
+        nfft = nperseg
+    else:
+        nfft = int(np.round(fs / df / 2)) * 2  # ensure nfft is even
+    f, pxx = ss.welch(aligned_signal, fs=fs, nperseg=nperseg, nfft=nfft, axis=time_axis)
 
     del coords[time_dim]
     coords['frequency'] = f
     dims[time_axis] = 'frequency'
-    return xr.DataArray(pxx, coords=coords, dims=dims)
+    da = xr.DataArray(pxx, coords=coords, dims=dims)
+    da.attrs.update(
+        fs=fs,
+        nperseg=nperseg,
+        nfft=nfft,
+        n_dropped=n_dropped,
+        unit=as_string(as_quantity(aligned_signal.attrs['unit']) ** 2 / as_quantity('Hz'))
+    )
+    return da
 
 
 def bandpass_filter_blocks(

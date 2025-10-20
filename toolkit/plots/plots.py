@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 from .format import UNIT
 
+from typing import Literal
 from matplotlib.pyplot import Figure, Axes
 from numpy.typing import ArrayLike
 
@@ -129,3 +130,111 @@ def plot_channel_signal_array(
         ax2.set_yticklabels(subset_labels)
 
     return ax
+
+
+def _get_psd_plt_range(
+    plt_range : ArrayLike | float,
+    frequencies : ArrayLike | None = None,
+    log_frequency : bool = False
+) -> tuple[float, float]:
+    """Get frequency range for plotting PSD.
+    
+    Parameters
+    ----------
+    plt_range : ArrayLike | float
+        If float, use (0, plt_range) Hz.
+        If ArrayLike, use (plt_range[0], plt_range[1]) Hz.
+        if ArrayLike is empty, use (0, np.inf) Hz (full frequency range).
+    frequencies : ArrayLike | None
+        Frequency array for getting frequency range.
+    log_frequency : bool
+        Whether using log frequency scale (remove 0 Hz from range if True).
+
+    Returns
+    -------
+    tuple[float, float]
+        Frequency range for plotting.
+    """
+    if frequencies is None:
+        freq_range = (0.1 if log_frequency else 0., np.inf)
+    else:
+        frequencies = np.asarray(frequencies)
+        if log_frequency and frequencies[0] == 0:
+            freq_range = (frequencies[1], frequencies[-1])
+        else:
+            freq_range = (frequencies[0], frequencies[-1])
+    plt_range = np.asarray(plt_range, dtype=float)
+    if plt_range.size == 0:
+        plt_range = (0., np.inf)  # full frequency range
+    elif plt_range.size == 1:
+        plt_range = (0, plt_range.item())
+    plt_range = (max(plt_range[0], freq_range[0]), min(plt_range[1], freq_range[1]))
+    return plt_range
+
+
+def plot_channel_psd(
+    psd_da : xr.DataArray,
+    channel_dim : str = 'channel',
+    plt_range : ArrayLike | float = 100.,
+    power_scale : Literal['dB', 'log', 'linear'] = 'dB',
+    log_frequency : bool = False,
+    cmap : str = 'plasma',
+    channel_title : str | None = None,
+    ax : Axes | None = None
+):
+    """Plot PSD at available channels.
+    
+    Parameters
+    ----------
+    psd_da : xr.DataArray
+        PSD data array. Dimension: 'frequency', channel_dim.
+    channel_dim : str
+        Dimension name for channels.
+    plt_range : ArrayLike | float
+        Frequency range to plot. Tuple for frequency range or single value for upper limit.
+    power_scale : Literal['dB', 'log', 'linear']
+        Power scale. 'log' or 'linear' for using original unit, 'dB' for converting to decibels.
+    log_frequency : bool
+        Whether using log frequency scale.
+    cmap : str
+        Colormap for channels.
+    channel_title : str | None
+        Title for the channel legend.
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+    
+    Returns
+    -------
+    ax : Axes
+        Axes object with the plot.
+    """
+    plt_range = _get_psd_plt_range(plt_range, frequencies=psd_da.frequency, log_frequency=log_frequency)
+    psd_plt_da = psd_da.sel(frequency=slice(*plt_range))
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1)
+
+    if channel_title is None:
+        channel_title = channel_dim.title()
+    channels = psd_da.coords[channel_dim].values
+    colors = plt.get_cmap(cmap, channels.size)(np.linspace(0, 1, channels.size))
+    ax.set_prop_cycle(plt.cycler('color', colors))
+
+    if power_scale.lower() == 'db':
+        psd_plt_da = 10 * np.log10(psd_plt_da)
+        unit = 'dB/Hz'
+    else:
+        unit = UNIT[psd_da.attrs.get('unit', '')]
+    ax.plot(psd_plt_da.frequency, psd_plt_da.values.T, label=channels)
+
+    if power_scale.lower() == 'log':
+        ax.set_yscale('log')
+    if log_frequency:
+        ax.set_xscale('log')
+    ax.set_xlim(plt_range)
+
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel(f'PSD ({unit})')
+    ax.legend(loc='upper right', framealpha=0.2, title=channel_title)
+    return ax
+
