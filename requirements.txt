@@ -1,5 +1,5 @@
 allensdk>=2.15.2
-fooof==1.0.0
+fooof==1.1.0
 quantities
 scikit-learn
 pywt

@@ -48,7 +48,8 @@ def str_to_unit(unit : str) -> UnitQuantity:
 def unit_to_str(quantity : UnitQuantity, use_unicode : bool = False) -> str:
     """Convert a unit quantity object to a string."""
     with unicode_units(use_unicode):
-        return str(quantity.dimensionality)
+        dim = str(quantity.dimensionality)
+        return '' if dim == 'dimensionless' else dim
 
 
 def as_quantity(unit : str | UnitQuantity) -> UnitQuantity:

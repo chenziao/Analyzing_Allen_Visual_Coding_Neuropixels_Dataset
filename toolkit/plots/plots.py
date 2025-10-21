@@ -1,14 +1,22 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+from quantities import frequency
 import xarray as xr
 import matplotlib.pyplot as plt
 
+from ..analysis.spectrum import _get_psd_freq_range
 from .format import UNIT
 
-from typing import Literal
+from typing import Any, Literal, Sequence
 from matplotlib.pyplot import Figure, Axes
 from numpy.typing import ArrayLike
+
+if TYPE_CHECKING:
+    from fooof import FOOOF
+    from fooof.data import FOOOFResults
 
 
 def plot_probe_channel_positions(channels : pd.DataFrame, ax : Axes | None = None):
@@ -132,50 +140,10 @@ def plot_channel_signal_array(
     return ax
 
 
-def _get_psd_plt_range(
-    plt_range : ArrayLike | float,
-    frequencies : ArrayLike | None = None,
-    log_frequency : bool = False
-) -> tuple[float, float]:
-    """Get frequency range for plotting PSD.
-    
-    Parameters
-    ----------
-    plt_range : ArrayLike | float
-        If float, use (0, plt_range) Hz.
-        If ArrayLike, use (plt_range[0], plt_range[1]) Hz.
-        if ArrayLike is empty, use (0, np.inf) Hz (full frequency range).
-    frequencies : ArrayLike | None
-        Frequency array for getting frequency range.
-    log_frequency : bool
-        Whether using log frequency scale (remove 0 Hz from range if True).
-
-    Returns
-    -------
-    tuple[float, float]
-        Frequency range for plotting.
-    """
-    if frequencies is None:
-        freq_range = (0.1 if log_frequency else 0., np.inf)
-    else:
-        frequencies = np.asarray(frequencies)
-        if log_frequency and frequencies[0] == 0:
-            freq_range = (frequencies[1], frequencies[-1])
-        else:
-            freq_range = (frequencies[0], frequencies[-1])
-    plt_range = np.asarray(plt_range, dtype=float)
-    if plt_range.size == 0:
-        plt_range = (0., np.inf)  # full frequency range
-    elif plt_range.size == 1:
-        plt_range = (0, plt_range.item())
-    plt_range = (max(plt_range[0], freq_range[0]), min(plt_range[1], freq_range[1]))
-    return plt_range
-
-
 def plot_channel_psd(
     psd_da : xr.DataArray,
     channel_dim : str = 'channel',
-    plt_range : ArrayLike | float = 100.,
+    freq_range : ArrayLike | float = (),
     power_scale : Literal['dB', 'log', 'linear'] = 'dB',
     log_frequency : bool = False,
     cmap : str = 'plasma',
@@ -190,8 +158,10 @@ def plot_channel_psd(
         PSD data array. Dimension: 'frequency', channel_dim.
     channel_dim : str
         Dimension name for channels.
-    plt_range : ArrayLike | float
-        Frequency range to plot. Tuple for frequency range or single value for upper limit.
+    freq_range : ArrayLike | float
+        Frequency range to plot. If float, use (0, freq_range) Hz.
+        If ArrayLike, use (freq_range[0], freq_range[1]) Hz.
+        If ArrayLike is empty, use (0, np.inf) Hz (full frequency range).
     power_scale : Literal['dB', 'log', 'linear']
         Power scale. 'log' or 'linear' for using original unit, 'dB' for converting to decibels.
     log_frequency : bool
@@ -208,8 +178,8 @@ def plot_channel_psd(
     ax : Axes
         Axes object with the plot.
     """
-    plt_range = _get_psd_plt_range(plt_range, frequencies=psd_da.frequency, log_frequency=log_frequency)
-    psd_plt_da = psd_da.sel(frequency=slice(*plt_range))
+    freq_range = _get_psd_freq_range(freq_range, frequencies=psd_da.frequency, log_frequency=log_frequency)
+    psd_plt_da = psd_da.sel(frequency=slice(*freq_range))
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
@@ -225,16 +195,186 @@ def plot_channel_psd(
         unit = 'dB/Hz'
     else:
         unit = UNIT[psd_da.attrs.get('unit', '')]
+
     ax.plot(psd_plt_da.frequency, psd_plt_da.values.T, label=channels)
 
     if power_scale.lower() == 'log':
         ax.set_yscale('log')
     if log_frequency:
         ax.set_xscale('log')
-    ax.set_xlim(plt_range)
+    ax.set_xlim(freq_range)
 
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel(f'PSD ({unit})')
     ax.legend(loc='upper right', framealpha=0.2, title=channel_title)
+    return ax
+
+
+def plot_fooof_quick(
+    fooof : FOOOF,
+    plot_peaks : Literal['shade', 'dot', 'outline', 'line'] | None = 'dot',
+    freq_range=(),
+    plt_log=False,
+    ax=None,
+    **kwargs
+):
+    """Helper function for plotting FOOOF results using built-in function FOOOF.plot().
+    This function constraints the frequency range to avoid errors.
+    
+    Parameters
+    ----------
+    fooof : FOOOF
+        FOOOF object.
+    plot_peaks : Literal['shade', 'dot', 'outline', 'line'] | None
+        Whether to plot the peaks.
+    freq_range : ArrayLike | float
+        Frequency range to plot. If float, use (0, freq_range) Hz.
+        If ArrayLike, use (freq_range[0], freq_range[1]) Hz.
+        If ArrayLike is empty, use (0, np.inf) Hz (full frequency range).
+    plt_log : bool
+        Whether to plot the frequency axis in log scale.
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+    **kwargs : dict
+        Keyword arguments for FOOOF.plot().
+
+    Returns
+    -------
+    ax : Axes
+        Axes object with the plot.
+    """
+    freq_range = _get_psd_freq_range(freq_range, frequencies=fooof.freqs, log_frequency=plt_log)
+    fooof.plot(plot_peaks=plot_peaks, freq_range=freq_range, plt_log=plt_log, ax=ax, **kwargs)
+    if ax is None:
+        ax = plt.gca()
+    return ax
+
+
+def plot_fooof(psd_da : xr.DataArray | ArrayLike,
+    f : ArrayLike | None = None,
+    fooof_result : FOOOFResults | None = None,
+    freq_range : ArrayLike | float = (),
+    power_scale : Literal['dB', 'log', 'linear'] = 'dB',
+    log_frequency : bool = False,
+    ax : Axes | None = None
+):
+    """Plot FOOOF results in customized style.
+    
+    Parameters
+    ----------
+    psd_da : xr.DataArray | ArrayLike
+        Power spectral density array. Dimension should be 'frequency'.
+    f : ArrayLike | None
+        Frequency array. Used only when psd_da is not a DataArray. Otherwise ignored.
+    fooof_result : FOOOFResults | None
+        FOOOF results. If None, fit FOOOF with default parameters.
+    freq_range : ArrayLike | float
+        Frequency range to plot. If float, use (0, freq_range) Hz.
+        If ArrayLike, use (freq_range[0], freq_range[1]) Hz.
+        If ArrayLike is empty, use (0, np.inf) Hz (full frequency range).
+    power_scale : Literal['dB', 'log', 'linear']
+        Power scale. 'log' or 'linear' for using original unit, 'dB' for converting to decibels.
+    log_frequency : bool
+        Whether using log frequency scale.
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+        
+    Returns
+    -------
+    ax : Axes
+        Axes object with the plot.
+    """
+    if isinstance(psd_da, xr.DataArray):
+        pxx = psd_da.values
+        f = psd_da.coords['frequency'].values
+        unit = psd_da.attrs.get('unit', '')
+    else:
+        pxx = np.asarray(psd_da)
+        f = np.asarray(f)
+        unit = ''
+
+    if fooof_result is None:
+        from ..analysis.spectrum import fit_fooof
+        fooof_result = fit_fooof(pxx, f=f)[0]
+
+    from fooof.sim.gen import gen_model
+    # get full and aperiodic fits
+    full_fit, _, ap_fit = gen_model(f[1:], fooof_result.aperiodic_params,
+                                    fooof_result.gaussian_params, return_components=True)
+    full_fit = np.insert(10 ** full_fit, 0, pxx[0])  # insert DC component
+    ap_fit = np.insert(10 ** ap_fit, 0, pxx[0])  # insert DC component
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1)
+
+    freq_range = _get_psd_freq_range(freq_range, frequencies=f, log_frequency=log_frequency)
+    f_idx = (f >= freq_range[0]) & (f <= freq_range[1])
+    f, pxx = f[f_idx], pxx[f_idx]
+    full_fit, ap_fit = full_fit[f_idx], ap_fit[f_idx]
+
+    if power_scale.lower() == 'db':
+        pxx, full_fit, ap_fit = [10 * np.log10(x) for x in [pxx, full_fit, ap_fit]]
+        unit = 'dB/Hz'
+
+    ax.plot(f, pxx, 'k', label='Original')
+    ax.plot(f, full_fit, 'r', label='Full model fit')
+    ax.plot(f, ap_fit, 'b--', label='Aperiodic fit')
+
+    if power_scale.lower() == 'log':
+        ax.set_yscale('log')
+    if log_frequency:
+        ax.set_xscale('log')
+    ax.set_xlim(freq_range)
+
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel(f'PSD ({unit})')
+    ax.legend(loc='upper right', frameon=False)
+    return ax
+
+
+def plot_freq_band(
+    bands : Sequence[tuple[float, float]] | tuple[float, float],
+    band_labels : Sequence[str] | str | None = None,
+    band_colors_map : dict[str, Any] | None = None,
+    alpha : float = 0.1,
+    ax : Axes | None = None,
+    **kwargs
+):
+    """Plot the frequency band as vertical shaded regions.
+    
+    Parameters
+    ----------
+    bands : Sequence[tuple[float, float]] | tuple[float, float]
+        Frequency bands.
+    band_labels : Sequence[str] | str | None
+        Labels for the bands. If None, no labels will be shown.
+    band_colors_map : dict[str, Any] | None
+        Map of band labels to colors.
+    alpha : float
+        Alpha value for the shaded regions.
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+    **kwargs : dict
+        Keyword arguments for ax.axvspan().
+    """
+    if band_colors_map is None:
+        from .colors import BAND_COLORS
+        band_colors_map = BAND_COLORS  # default color map
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1)
+
+    bands = np.atleast_2d(bands)
+
+    if band_labels is None:
+        band_labels = None
+    band_labels = np.broadcast_to(np.asarray(band_labels, dtype=object), bands.shape[0])
+
+    for band, label in zip(bands, band_labels):
+        ax.axvspan(*band[:2], label=label, color=band_colors_map[label],
+            alpha=alpha, linestyle='none', **kwargs)
+
+    if any(band_labels):
+        ax.legend()  # Update legend for the shaded regions
     return ax
 

@@ -120,6 +120,7 @@ def trial_psd(
     aligned_signal : xr.DataArray,
     tseg : float = 1.,
     df : float | None = None,
+    poverlap : float = 0.5,
     time_dim : str = 'time_from_presentation_onset'
 ) -> xr.DataArray:
     """Calculate PSD from aligned signal using Welch method
@@ -132,6 +133,8 @@ def trial_psd(
         Segment duration in seconds.
     df : float | None
         Frequency resolution in Hz. If None, use frequency resolution around 1/tseg.
+    poverlap : float
+        Overlap proportion between segments. Must be between 0 and 1.
     time_dim : str
         Name of the time dimension in seconds.
 
@@ -142,6 +145,8 @@ def trial_psd(
         Attributes:
         - 'fs': sampling frequency
         - 'nperseg': number of samples per segment for Welch method
+        - 'noverlap': number of overlap samples between segments for Welch method
+        - 'nseg': number of segments for Welch method
         - 'nfft': number of FFT points for Welch method
         - 'n_dropped': number of samples dropped by Welch method from the last segment
         - 'unit': unit of the signal squared per Hertz
@@ -149,18 +154,25 @@ def trial_psd(
     coords = dict(aligned_signal.coords)
     dims = list(aligned_signal.dims)
     time_axis = dims.index(time_dim)
+    assert poverlap >= 0 and poverlap < 1, "poverlap must be between 0 and 1"
 
+    # determine parameters for Welch method
     fs = aligned_signal.attrs['fs']
-    trial_duration = aligned_signal.coords[time_dim][-1] - aligned_signal.coords[time_dim][0]
-    nseg = max(np.round(trial_duration / tseg).astype(int).item(), 1)
+    N = coords[time_dim].size  # total number of samples per trial
+    nseg = max(int(np.round((N / fs / tseg - poverlap) / (1 - poverlap))), 1)
     # take floor to avoid dropping too many samples by welch method
-    nperseg = aligned_signal.coords[time_dim].size // nseg
-    n_dropped = aligned_signal.coords[time_dim].size - nperseg * nseg
+    nperseg = int(np.floor(N / (nseg * (1 - poverlap) + poverlap)))
+    # calculate actual noverlap and number of segments
+    noverlap = int(np.floor(poverlap * nperseg))
+    nseg = (N - noverlap) // (nperseg - noverlap)
+    n_dropped = N - (nseg * (nperseg - noverlap) + noverlap)
     if df is None:
         nfft = nperseg
     else:
         nfft = int(np.round(fs / df / 2)) * 2  # ensure nfft is even
-    f, pxx = ss.welch(aligned_signal, fs=fs, nperseg=nperseg, nfft=nfft, axis=time_axis)
+
+    # calculate PSD using Welch method
+    f, pxx = ss.welch(aligned_signal, fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft, axis=time_axis)
 
     del coords[time_dim]
     coords['frequency'] = f
@@ -169,6 +181,8 @@ def trial_psd(
     da.attrs.update(
         fs=fs,
         nperseg=nperseg,
+        noverlap=noverlap,
+        nseg=nseg,
         nfft=nfft,
         n_dropped=n_dropped,
         unit=as_string(as_quantity(aligned_signal.attrs['unit']) ** 2 / as_quantity('Hz'))
