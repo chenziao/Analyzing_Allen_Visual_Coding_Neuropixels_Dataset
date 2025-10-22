@@ -8,7 +8,7 @@ import warnings
 
 import pywt
 from fooof import FOOOF
-from fooof.sim.gen import gen_aperiodic, gen_model
+from fooof.sim.gen import gen_aperiodic
 
 from numpy.typing import ArrayLike
 
@@ -162,6 +162,7 @@ def fit_fooof(
 def get_fooof_freq_band(
     fooof_result : FOOOFResults,
     freq_range : tuple[float, float],
+    width_limit : tuple[float, float] = (0., np.inf),
     top_n_peaks : int = 1,
     bandwidth_n_sigma : float = 1.5
 ) -> tuple[float, float]:
@@ -173,6 +174,8 @@ def get_fooof_freq_band(
         FOOOF results.
     freq_range : tuple[float, float]
         Frequency band of interest
+    width_limit : tuple[float, float]
+        Width limit of the peaks in terms of the standard deviation of the Gaussian parameters.
     top_n_peaks : int
         Number of top peaks to include in the band.
     bandwidth_n_sigma : float
@@ -188,6 +191,7 @@ def get_fooof_freq_band(
     """
     gaussian_params = fooof_result.gaussian_params
     peak_inds = (gaussian_params[:, 0] >= freq_range[0]) & (gaussian_params[:, 0] <= freq_range[1])
+    peak_inds = peak_inds & (gaussian_params[:, 2] >= width_limit[0]) & (gaussian_params[:, 2] <= width_limit[1])
     band_peaks = gaussian_params[peak_inds, :]
     if band_peaks.size == 0:
         return None, peak_inds

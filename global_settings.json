@@ -1,0 +1,12 @@
+{
+    "wave_band_limit": {
+        "beta": [20.0, 40.0],
+        "gamma": [40.0, 80.0],
+        "LGN gamma": [50.0, 70.0]
+    },
+    "wave_band_width_limit": {
+        "beta": [0.0, 30.0],
+        "gamma": [5.0, 20.0],
+        "LGN gamma": [0.0, 10.0]
+    }
+}

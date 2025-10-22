@@ -24,6 +24,9 @@ FIGURE_DIR = resolver.get_path('figure_dir')
 # Output configuration
 OUTPUT_CONFIG_FILE = ROOT_DIR / 'output_config.json'
 
+# Global settings
+GLOBAL_SETTINGS_FILE = ROOT_DIR / 'global_settings.json'
+
 
 __all__ = [
     'CACHE_BASE_DIR',

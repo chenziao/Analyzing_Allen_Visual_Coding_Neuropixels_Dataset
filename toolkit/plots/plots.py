@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-from quantities import frequency
 import xarray as xr
 import matplotlib.pyplot as plt
 
@@ -333,7 +332,7 @@ def plot_fooof(psd_da : xr.DataArray | ArrayLike,
 
 
 def plot_freq_band(
-    bands : Sequence[tuple[float, float]] | tuple[float, float],
+    bands : Sequence[tuple[float, float] | None] | tuple[float, float] | None,
     band_labels : Sequence[str] | str | None = None,
     band_colors_map : dict[str, Any] | None = None,
     alpha : float = 0.1,
@@ -364,13 +363,17 @@ def plot_freq_band(
     if ax is None:
         _, ax = plt.subplots(1, 1)
 
-    bands = np.atleast_2d(bands)
+    bands = np.asarray(bands, dtype=object)
+    if not np.any(bands == None):
+        bands = np.atleast_2d(bands.astype(float))
 
     if band_labels is None:
         band_labels = None
     band_labels = np.broadcast_to(np.asarray(band_labels, dtype=object), bands.shape[0])
 
     for band, label in zip(bands, band_labels):
+        if band is None:
+            continue
         ax.axvspan(*band[:2], label=label, color=band_colors_map[label],
             alpha=alpha, linestyle='none', **kwargs)
 

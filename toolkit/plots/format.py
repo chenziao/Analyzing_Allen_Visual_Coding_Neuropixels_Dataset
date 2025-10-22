@@ -1,11 +1,9 @@
-import json
-
 from ..paths.paths import OUTPUT_CONFIG_FILE
+from ..utils.config_accessor import ConfigAccessor
 from ..utils.quantity_units import DisplayUnit
 
 
-with open(OUTPUT_CONFIG_FILE, 'r') as f:
-    OUTPUT_CONFIG = json.load(f)
+OUTPUT_CONFIG = ConfigAccessor(OUTPUT_CONFIG_FILE)
 
 
 """Display unit for plots

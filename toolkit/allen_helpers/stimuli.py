@@ -10,6 +10,58 @@ from dataclasses import dataclass
 from numpy.typing import NDArray
 
 
+# Lookup table for stimuli
+STIMULUS_NAMES = {
+    "brain_observatory_1.1": [
+        'flashes',
+        'drifting_gratings',
+        'natural_movie_three',
+        'natural_movie_one',
+        'static_gratings',
+        'natural_scenes',
+    ],
+    "functional_connectivity": [
+        'flashes',
+        'drifting_gratings_contrast',
+        'drifting_gratings_75_repeats',
+        'natural_movie_one_more_repeats',
+        'natural_movie_one_shuffled',
+    ]
+}
+
+STIMULUS_CATEGORIES = {
+    "brain_observatory_1.1": {
+        'drifting_gratings': ['drifting_gratings'],
+        'natural_movies': ['natural_movie_one', 'natural_movie_three'],
+    },
+    "functional_connectivity": {
+        'drifting_gratings': ['drifting_gratings_75_repeats', 'drifting_gratings_contrast'],
+        'natural_movies': ['natural_movie_one_more_repeats', 'natural_movie_one_shuffled']
+    }
+}
+
+
+# Drifting gratings conditions
+CONDITION_TYPES = ('orientation', 'temporal_frequency', 'contrast')
+
+# condition types with varied/fixed values in each session type
+VARIED_CONDITION_TYPES = {
+    "brain_observatory_1.1": ('orientation', 'temporal_frequency'),
+    "functional_connectivity": ('contrast', 'orientation'),
+}
+FIXED_CONDITION_TYPES = {
+    "brain_observatory_1.1": ('contrast', ),
+    "functional_connectivity": ('temporal_frequency', ),
+}
+
+# Labels of condition types for displaying
+COND_LABEL = dict(
+    orientation = 'Orientation (deg)',
+    temporal_frequency = 'Temporal frequency (Hz)',
+    contrast = 'Contrast'
+)
+
+
 # Get trials for different stimulus types
 
 @dataclass
@@ -92,7 +144,7 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
         presentations = presentations,
         ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values,
         times = presentations_times[:, 0],
-        duration = np.diff(presentations_times, axis=1).median()
+        duration = np.median(np.diff(presentations_times, axis=1))
     )
     return stimulus_trials
 
@@ -122,6 +174,8 @@ def get_stimulus_trials(stimulus_presentations : pd.DataFrame, stimulus_name : s
         raise ValueError(f"Stimulus type '{stimulus_name}' not supported.")
     return get_trials(stimulus_presentations, stimulus_name=stimulus_name)
 
+
+# Get stimulus blocks for different stimulus types
 
 @dataclass
 class StimulusBlock(StimulusTrials):
@@ -253,4 +307,73 @@ def align_trials_from_blocks(
         aligned_signals.append(align_trials(signal_array, stimulus_block, window))
     aligned_signal = xr.concat(aligned_signals, dim='presentation_id', combine_attrs='override')
     return aligned_signal
+
+
+def presentation_conditions(
+    presentations : pd.DataFrame,
+    condition_types : tuple[str, ...]
+) -> tuple[xr.DataArray, dict[str, NDArray[int]]]:
+    """Separate conditions in given presentations and return maps of conditions
+
+    Parameters
+    ----------
+    presentations : pd.DataFrame
+        Stimulus presentations.
+    condition_types : tuple[str, ...]
+        Condition types of interest.
+
+    Returns
+    -------
+    condition_id : xr.DataArray
+        Condition id. Dimension: condition types. Coordinates: unique values of each condition type.
+    cond_presentation_id : dict[str, NDArray[int]]
+        Map from condition to presentation ids of the condition.
+    """
+    # map condition type to unique values of the condition
+    conditions = {c: np.unique(presentations[c]).astype(float) for c in condition_types}
+    # map value tuple of different condition types to stimulus condition id
+    cond_id_map = dict(zip(
+        map(tuple, presentations[conditions.keys()].values),
+        presentations['stimulus_condition_id']
+    ))
+    # construct condition id DataArray
+    condition_mesh = np.array(np.meshgrid(*conditions.values(), indexing='ij'))  # (condition_type, mesh grid ...)
+    condition_combinations = condition_mesh.reshape(condition_mesh.shape[0], -1).T  # (all conditions, values combination)
+    condition_id = [cond_id_map[tuple(x)] for x in condition_combinations]
+    condition_id = np.reshape(condition_id, condition_mesh.shape[1:])  # condition_id in mesh grid shape
+    condition_id = xr.DataArray(condition_id, coords=conditions, name='condition_id')  # condition values as coordinates
+    # map condition id to presentation ids of the condition
+    presentations_id = presentations.index.values
+    stimulus_condition_id = presentations['stimulus_condition_id'].values
+    cond_presentation_id = {c: presentations_id[stimulus_condition_id == c] for c in np.ravel(condition_id)}
+    return condition_id, cond_presentation_id
+
+
+def average_across_conditions(
+    da : xr.DataArray | xr.Dataset,
+    condition_id : xr.DataArray,
+    cond_presentation_id : dict[str, NDArray[int]]
+) -> xr.DataArray | xr.Dataset:
+    """Average data across conditions.
+    
+    Parameters
+    ----------
+    da : xr.DataArray | xr.Dataset
+        Data array to be averaged across conditions. Must include 'presentation_id' dimension.
+    condition_id : xr.DataArray
+        Condition id. Returned by `presentation_conditions()`.
+    cond_presentation_id : dict[str, NDArray[int]]
+        Map from condition to presentation ids of the condition. Returned by `presentation_conditions()`.
+
+    Returns
+    -------
+    cond_da : xr.DataArray | xr.Dataset
+        Data array averaged across conditions. Dimension 'presentation_id' is removed.
+        New dimension is 'condition_id', which itself has dimensions of the condition types,
+        with coordinates being the condition values.
+    """
+    cond_da = [da.sel(presentation_id=i).mean(dim='presentation_id') for i in cond_presentation_id.values()]
+    cond_da = xr.concat(cond_da, dim=pd.Index(cond_presentation_id, name='condition_id'), combine_attrs='override')
+    cond_da = cond_da.sel(condition_id=condition_id)
+    return cond_da
 
