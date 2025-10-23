@@ -94,7 +94,7 @@ class StructureFinder:
         self.voxel = int(voxel)
     
         # Load structure tree. Manifest will be cached locally
-        self.cache_dir.mkdir(exist_ok=True)
+        self.reference_space_cache_dir.mkdir(exist_ok=True, parents=True)
         self.rsc = ReferenceSpaceCache(
             resolution=self.voxel,
             reference_space_key="annotation/ccf_2017",
@@ -121,7 +121,6 @@ class StructureFinder:
     def get_ccf_annotation(self) -> NDArray[int]:
         """Get CCF annotation volume array (AP, DV, ML). Saved to cache directory."""
         annot_file = f"annotation_{self.voxel:d}.npy"
-        self.reference_space_cache_dir.mkdir(exist_ok=True)
         annot_path = self.reference_space_cache_dir / annot_file
         if not annot_path.exists():
             self._annotation, meta = self.rsc.get_annotation_volume()
