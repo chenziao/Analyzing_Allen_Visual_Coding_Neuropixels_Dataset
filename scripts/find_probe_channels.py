@@ -18,6 +18,17 @@ PARAMETERS = dict(
         default = 40.0,
         type = float,
         help = "Spatial Gaussian sigma in µm."
+    ),
+    cache_data_only = dict(
+        default = False,
+        type = bool,
+        help = "Only cache data, skip further processing."
+    ),
+    timeout = dict(
+        default = 300,
+        type = int,
+        help = "Timeout for halting downloads in seconds. "
+            "Set to 0 to disable timeout."
     )
 )
 
@@ -26,6 +37,8 @@ def find_probe_channels(
     session_id: int,
     csd_sigma_time: float = 1.6,
     csd_sigma_space: float = 40.0,
+    cache_data_only: bool = False,
+    timeout: int = 300
 ):
     import numpy as np
     from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
@@ -37,17 +50,27 @@ def find_probe_channels(
     from toolkit.analysis.signal import compute_csd
     from toolkit.pipeline.data_io import SessionDirectory
 
+    from toolkit.utils.timeout_handler import run_with_timeout
+
     #################### Get session and probe ####################
     cache = EcephysProjectCache.from_warehouse(manifest=paths.ECEPHYS_MANIFEST_FILE)
     ecephys_structure_acronym = GLOBAL_SETTINGS.get('ecephys_structure_acronym')
 
     # get channels in the structure
-    session = cache.get_session_data(session_id)
+    def download_session():
+        return cache.get_session_data(session_id)
+
+    session = run_with_timeout(download_session, timeout, f"Session {session_id} data download")
+
     all_channels = session.channels
     channels = all_channels.loc[all_channels['structure_acronym'] == ecephys_structure_acronym]
 
     # get probes for the session and structure (usually only one)
-    probes = cache.get_probes()
+    def download_probes():
+        return cache.get_probes()
+    
+    probes = run_with_timeout(download_probes, timeout, "Probes data download")
+
     probes = probes[probes['ecephys_session_id'] == session_id]
     probes = probes.iloc[
         [ecephys_structure_acronym in x for x in probes['ecephys_structure_acronyms']]
@@ -64,6 +87,10 @@ def find_probe_channels(
     print(f"Number of missing channels in middle: {n_missing_channels:d}")
     print(f"Vertical range: {vertical_position_range:d} μm")
     print(f"Number of rows: {vertical_position_range // 20 + 1:d}")
+
+    if cache_data_only:
+        print("Cache data only, skipping further processing.")
+        return
 
 
     #################### Find LFP channels locations in structure ####################

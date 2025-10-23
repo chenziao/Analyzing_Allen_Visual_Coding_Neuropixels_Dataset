@@ -15,6 +15,8 @@ from ..pipeline.global_settings import GLOBAL_SETTINGS
 from typing import Sequence, Callable, Any
 
 
+# Parse arguments from command line
+
 class SessionSet(Enum):
     ALL = 'all'
     TEST = 'test'
@@ -46,16 +48,21 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
 
     match session_set:
         case SessionSet.ALL:
+            # Get all sessions available in the database
             from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
             cache = EcephysProjectCache.from_warehouse(manifest=paths.ECEPHYS_MANIFEST_FILE)
             sessions = cache.get_session_table().index.to_list()
 
         case SessionSet.TEST:
-            with open(paths.TEST_SESSIONS_FILE, 'r') as f:
-                test_sessions = json.load(f)
-            sessions = test_sessions
+            # Get test sessions from the sessions file
+            with open(paths.SESSIONS_FILE, 'r') as f:
+                sessions_config = json.load(f)
+            sessions = sessions_config.get('test', [])
+            if not sessions:
+                raise ValueError("No test sessions found in the sessions file")
 
         case SessionSet.SELECTED:
+            # Get selected sessions from the session selection file
             import pandas as pd
             file = paths.OUTPUT_BASE_DIR / "session_selection.csv"
             sessions = pd.read_csv(file)['session_id'].to_list()
@@ -67,6 +74,26 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
             raise ValueError("Custom sessions need to be provided as a list of session IDs")
 
     return sessions, session_set
+
+
+def get_blacklist_sessions() -> list[int]:
+    """Get the blacklist sessions from the sessions file."""
+    with open(paths.SESSIONS_FILE, 'r') as f:
+        sessions_config = json.load(f)
+    return sessions_config.get('blacklist', [])
+
+
+def filter_blacklist_sessions(sessions: list[int]) -> list[int]:
+    """Filter the sessions with blacklist and return the accepted and blacklisted sessions."""
+    blacklist_sessions = set(get_blacklist_sessions())
+    accepted_sessions = []
+    blacklisted_sessions = []
+    for session in sessions:
+        if session in blacklist_sessions:
+            blacklisted_sessions.append(session)
+        else:
+            accepted_sessions.append(session)
+    return accepted_sessions, blacklisted_sessions
 
 
 @dataclass
@@ -122,12 +149,25 @@ class BatchProcessArgumentParser():
         available_session_sets = [s.name for s in SessionSet if s != SessionSet.CUSTOM]
 
         # Create argument parser
-        self.parser = argparse.ArgumentParser()
-        self.parser.add_argument(
+        self.parser = parser = argparse.ArgumentParser()
+        parser.add_argument(
             '--session_set', type=str, default=session_set,
             help=f"The session set to process the sessions from. Available sets: {', '.join(available_session_sets)}."
         )
+        parser.add_argument(
+            '--session_list', type=int, nargs='+', default=[],
+            help="List of session IDs to process (space-separated). "
+                "'--session_set' argument will be ignored if this is provided."
+        )
+        parser.add_argument(
+            '--use_blacklist', action='store_true', default=False,
+            help="Use sessions blacklist to exclude sessions to process."
+        )
         self.add_parameter_to_parser()
+        parser.add_argument(
+            '--disable_logging', action='store_true', default=False,
+            help="Disable logging to the log file."
+        )
 
     def add_parameter_to_parser(self):
         """Add parameters to the argument parser."""
@@ -136,45 +176,55 @@ class BatchProcessArgumentParser():
             parameter = self.parameters.get(param)
             arg_type = parameter.type
             if arg_type is None:
-                arg_type = type(default).__name__
+                arg_type = type(default)
+            elif isinstance(arg_type, str):
+                arg_type = eval(arg_type)
             help = str(parameter)  # Get help text for the parameter
 
-            match arg_type:
+            match arg_type.__name__:
                 case 'bool':
-                    if default is False:
-                        parser.add_argument(f'--{param}', action='store_true', default=False, help=help)
-                    else:
-                        parser.add_argument(f'--no-{param}', dest=param, action='store_false', default=True, help=help)
+                    group = parser.add_mutually_exclusive_group()
+                    group.add_argument(f'--{param}', action='store_true', dest=param, help=help)
+                    group.add_argument(f'--no-{param}', action='store_false', dest=param, help=f"Disable {param}")
+                    parser.set_defaults(**{param: default})
                 case 'list':
                     parser.add_argument(
-                        f'--{param}',
-                        type=str,
-                        nargs='+',
-                        default=default,
+                        f'--{param}', type=str, nargs='+', default=default,
                         help=f"{help} Provide list input as space-separated values."
                     )
                 case _:
                     try:
                         parser.add_argument(f'--{param}', type=arg_type, default=default, help=help)
                     except Exception as e:
-                        raise TypeError(f"Invalid argument type for parameter '{param}': '{arg_type}'") from e
+                        raise TypeError(f"Invalid argument type for parameter '{param}': '{arg_type.__name__}'") from e
 
     def parse_args(self) -> dict[str, Any]:
         """Parse the arguments and return the dictionary of arguments for the `process_sessions()` function."""
         args = self.parser.parse_args()
         parameters = {key: getattr(args, key) for key in self.default_parameters.keys()}
-        arguments = dict(session_set=args.session_set, parameters=parameters)
+        arguments = dict(
+            parameters=parameters,
+            session_set=args.session_list if args.session_list else args.session_set,
+            use_blacklist=args.use_blacklist,
+            disable_logging=args.disable_logging
+        )
         return arguments
+
+
+# Process sessions
+
+def get_timestamp(format: str = '%Y-%m-%d %H:%M:%S') -> str:
+    """Get the current timestamp in local time in the given format."""
+    return datetime.datetime.now().astimezone().strftime(format)
 
 
 def get_log_info(process_function: Callable) -> str:
     """Get the log file for the process function with format <script_name>_<timestamp>"""
-    timestamp = datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
     try:
         script_name = Path(inspect.getfile(process_function)).stem
     except TypeError:
         script_name = process_function.__name__
-    return script_name, timestamp
+    return script_name, get_timestamp("%Y%m%d_%H%M%S")
 
 
 def log_file_path(script_name: str, timestamp: str) -> Path:
@@ -187,15 +237,52 @@ def parameters_file_path(script_name: str, timestamp: str) -> Path:
     return paths.BATCH_LOG_DIR / f"{script_name}_parameters_{timestamp}.json"
 
 
-def write_to_log(file):
-    """Context manager to write output to the log file."""
+class TeeOutput:
+    """A class that writes to both a file and the original stdout/stderr."""
+    def __init__(self, file, original_stream):
+        self.file = file
+        self.original_stream = original_stream
+    
+    def write(self, text):
+        # Write to both the file and the original stream
+        self.file.write(text)
+        self.file.flush()  # Ensure it's written to file immediately
+        self.original_stream.write(text)
+        self.original_stream.flush()  # Ensure it's written to console immediately
+    
+    def flush(self):
+        self.file.flush()
+        self.original_stream.flush()
+    
+    def __getattr__(self, name):
+        # Delegate any other attributes to the original stream
+        return getattr(self.original_stream, name)
+
+
+def write_to_log(file, tee_output=True):
+    """Context manager to write output to the log file.
+    
+    Parameters
+    ----------
+    file : file-like object
+        The file to write the log to
+    tee_output : bool, default True
+        If True, output will be written to both the file and the original stdout/stderr.
+        If False, output will only be written to the file.
+    """
     @contextlib.contextmanager
     def _log():
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         try:
-            sys.stdout = file
-            sys.stderr = file
+            if tee_output:
+                # Create tee objects that write to both file and original streams
+                sys.stdout = TeeOutput(file, old_stdout)
+                sys.stderr = TeeOutput(file, old_stderr)
+            else:
+                # Original behavior - only write to file
+                sys.stdout = file
+                sys.stderr = file
             yield
         finally:
             sys.stdout = old_stdout
@@ -203,10 +290,38 @@ def write_to_log(file):
     return _log()
 
 
+@contextlib.contextmanager
+def print_to_file(file_path, tee_output=True, disable=False, **kwargs):
+    """Context manager that opens a file and redirects print() statements to it.
+    
+    Parameters
+    ----------
+    file_path : str or Path
+        The path to the file to write to
+    tee_output : bool, default True
+        If True, output will be written to both the file and the original stdout/stderr.
+        If False, output will only be written to the file.
+    disable : bool, default False
+        If True, output will not be written to the file.
+    kwargs : dict
+        Keyword arguments to pass to the function open(file_path, 'w', **kwargs).
+    """
+    if disable:
+        print(f"Logging is disabled (not writing to file: {file_path})\n")
+        yield None
+    else:
+        print(f"Logging to file: {file_path}\n")
+        with open(file_path, 'w', **kwargs) as f:
+            with write_to_log(f, tee_output=tee_output):
+                yield f
+
+
 def process_sessions(
     process_function: Callable[[int, ...], Any],
+    parameters: dict[str, Any],
     session_set: SessionSet | str | list[int],
-    parameters: dict[str, Any]
+    use_blacklist: bool = False,
+    disable_logging: bool = False
 ):
     """Process the sessions from the session set.
 
@@ -214,16 +329,22 @@ def process_sessions(
     ----------
     process_function: Callable
         The process function to execute for each session. The first argument must be the session ID.
-    session_set: SessionSet | str | list[int]
-        The session set to process the sessions from.
     parameters: dict[str, Any]
         The dictionary of parameters to pass to the process function.
+    session_set: SessionSet | str | list[int]
+        The session set to process the sessions from.
+    use_blacklist: bool = False,
+        If True, the blacklist sessions will be excluded from the session set.
+    disable_logging: bool = False
+        If True, logging will not be written to the log file.
 
     Returns
     -------
     None
     """
     sessions, session_set = get_sessions(session_set)
+    if use_blacklist:
+        sessions, blacklist_sessions = filter_blacklist_sessions(sessions)
 
     # Get log file and parameters file
     script_name, timestamp = get_log_info(process_function)
@@ -231,41 +352,49 @@ def process_sessions(
     parameters_file = parameters_file_path(script_name, timestamp)
 
     # Write to log file
-    with open(log_file, 'w', encoding='utf-8') as f:
+    with print_to_file(log_file, encoding='utf-8', disable=disable_logging) as f:
         # Function and arguments 
-        f.write(f"Process script: {script_name}\n")
-        f.write(f"Process function: {process_function.__name__}\n")
-        f.write(f"Parameters:\n")
+        print(f"Process script: {script_name}")
+        print(f"Process function: {process_function.__name__}")
+        print("Parameters:")
         for key, value in parameters.items():
-            f.write(f"  {key}: {value}\n")
+            print(f"  {key}: {value}")
 
         # Session set and session ids
-        f.write(f"\nProcessing session set: {session_set.name}\n")
-        f.write(f"Session IDs: \n")
+        print(f"\nProcessing session set: {session_set.name}")
+        print("Session IDs:")
         for session in sessions:
-            f.write(f"  {session}\n")
+            print(f"  {session}")
+
+        if use_blacklist:
+            print("\nBlacklisted sessions:")
+            for session in blacklist_sessions:
+                print(f"  {session}")
 
         # Write parameters to file
         with open(parameters_file, 'w', encoding='utf-8') as pf:
             json.dump(parameters, pf, indent=4)
 
         # Start processing
-        f.write(f"\n\nProcessing started at {datetime.datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("\n" + "=" * 80 + "\n\n")
+        print(f"\n\nProcessing started at {get_timestamp()}")
+        print("\n" + "=" * 80 + "\n")
 
         # Main processing loop
-        with write_to_log(f):
-            for session in sessions:
-                f.write(f"\nProcessing session: {session}\n")
-                f.write("-" * 80 + "\n\n")
-                try:
-                    process_function(session, **parameters)
-                except Exception as e:
-                    print(f"\n[ERROR] Exception occurred while processing session {session}:\n", file=f)
-                    traceback.print_exc(file=f)
-                f.write("\n" + "-" * 80 + "\n\n")
+        for session in sessions:
+            print(f"\nProcessing session: {session} at {get_timestamp()}")
+            print("-" * 80 + "\n")
+            try:
+                process_function(session, **parameters)
+            except Exception as e:
+                print(f"\n\n[ERROR] Exception occurred while processing session {session}:\n")
+                traceback.print_exc()
+                print("\n\n" + "-" * 80)
+                print(f"Session {session} processed aborted at {get_timestamp()}\n")
+            else:
+                print("\n\n" + "-" * 80)
+                print(f"Session {session} processed successfully at {get_timestamp()}\n")
 
         # End processing
-        f.write("\n" + "=" * 80 + "\n")
-        f.write(f"\nProcessing completed at {datetime.datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        print("\n" + "=" * 80)
+        print(f"\nProcessing completed at {get_timestamp()}")
 

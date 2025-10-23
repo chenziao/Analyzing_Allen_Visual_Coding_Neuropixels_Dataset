@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 - [output_config.json](output_config.json): Set the format for the output data.
 
-- [test_sessions.json](test_sessions.json): List of session IDs for test run of batch processing scripts.
+- [sessions.json](sessions.json): List of session IDs for test run of batch processing scripts and sessions blacklist to exclude sessions to process.
 
 ## Analysis Procedures
 
@@ -62,13 +62,26 @@ pip install -r requirements.txt
 
 ### Scripts (for batch processing)
 
-After a script finishes running, check the `batch_logs` folder (see `batch_log_dir` in [path_config.json](path_config.json)) for the logs of printed messages and errors. The parameters used for the script are saved in `.json` files in the `batch_logs` folder.
+- After a script finishes running, check the `batch_logs` folder (see `batch_log_dir` in [path_config.json](path_config.json)) for the logs of printed messages and errors. The parameters used for the script are saved in `.json` files in the `batch_logs` folder.
+
+- Common arguments for all scripts:
+    - `--session_set`: The session set to process the sessions from. Available sets: `all`, `test`, `selected`, `optotag`.
+      - `all`: All sessions in Allen's database.
+      - `test`: Test sessions listed in `'test'` key of [sessions.json](sessions.json).
+      - `selected`: Selected sessions recorded in `session_selection.csv` file in the `output` folder (see `output_base_dir` in [path_config.json](path_config.json)).
+      - `optotag`: Optotag sessions. (Not implemented yet)
+    - `--session_list`: List of session IDs to process (space-separated). `--session_set` argument will be ignored if this is provided.
+    - `--use_blacklist`: Use sessions blacklist to exclude sessions to process. The blacklist is listed in `'blacklist'` key of [sessions.json](sessions.json).
+    - `--disable_logging`: Disable logging to the log file.
+
+#### Scripts (execute in order, later scripts may depend on the results of previous scripts)
 
 1. [find_probe_channels.py](scripts/find_probe_channels.py)
 
     - Initial processing: download and cache data from Allen Database.
     - Find probe channels for the target structure (e.g. VISp).
     - Compute CSD for the channels in the structure.
+    - If `--cache_data_only` is set to `True`, the script will only download and cache the data and skip further processing.
 
 2. [process_stimuli_psd.py](scripts/process_stimuli_psd.py)
 

@@ -8,13 +8,13 @@
 #SBATCH -N 1
 #SBATCH -n 1
 ##SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=16G
+#SBATCH --mem-per-cpu=24G
 
 
 START=$(date)
 
 unset DISPLAY
-python scripts/find_probe_channels.py --session_set all
+python scripts/find_probe_channels.py --session_set all --cache_data_only --use_blacklist
 
 END=$(date)
 

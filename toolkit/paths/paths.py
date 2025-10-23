@@ -29,7 +29,7 @@ OUTPUT_CONFIG_FILE = ROOT_DIR / 'output_config.json'
 GLOBAL_SETTINGS_FILE = ROOT_DIR / 'global_settings.json'
 
 # Test sessions file
-TEST_SESSIONS_FILE = ROOT_DIR / 'test_sessions.json'
+SESSIONS_FILE = ROOT_DIR / 'sessions.json'
 
 
 __all__ = [
