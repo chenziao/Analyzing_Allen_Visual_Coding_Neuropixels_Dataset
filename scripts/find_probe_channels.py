@@ -1,0 +1,135 @@
+import add_path
+
+PARAMETERS = dict(
+    csd_sigma_time = dict(
+        default = 1.6,
+        type = float,
+        help = "Temporal Gaussian sigma in ms."
+    ),
+    csd_sigma_space = dict(
+        default = 40.0,
+        type = float,
+        help = "Spatial Gaussian sigma in µm."
+    )
+)
+
+
+def find_probe_channels(
+    session_id: int,
+    csd_sigma_time: float = 1.6,
+    csd_sigma_space: float = 40.0,
+):
+    import numpy as np
+    from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
+
+    from toolkit import paths
+    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
+    from toolkit.allen_helpers.location import CCF_COORDS
+    from toolkit.allen_helpers.location import StructureFinder, central_channel_in_structure
+    from toolkit.analysis.signal import compute_csd
+    from toolkit.pipeline.data_io import SessionDirectory
+
+    #################### Get session and probe ####################
+    cache = EcephysProjectCache.from_warehouse(manifest=paths.ECEPHYS_MANIFEST_FILE)
+    ecephys_structure_acronym = GLOBAL_SETTINGS.get('ecephys_structure_acronym')
+
+    # get channels in the structure
+    session = cache.get_session_data(session_id)
+    all_channels = session.channels
+    channels = all_channels.loc[all_channels['structure_acronym'] == ecephys_structure_acronym]
+
+    # get probes for the session and structure (usually only one)
+    probes = cache.get_probes()
+    probes = probes[probes['ecephys_session_id'] == session_id]
+    probes = probes.iloc[
+        [ecephys_structure_acronym in x for x in probes['ecephys_structure_acronyms']]
+    ]
+
+    # get the probe with the most channels in the structure
+    n_channels_in_probe =  [np.count_nonzero(channels['probe_id'] == i) for i in probes.index]
+    probe_id = probes.index[np.argmax(n_channels_in_probe)]
+    fs = probes.loc[probe_id, 'lfp_sampling_rate']
+
+    vertical_position_range = channels['probe_vertical_position'].max() - channels['probe_vertical_position'].min()
+    n_missing_channels = channels['probe_channel_number'].max() - channels['probe_channel_number'].min() + 1 - len(channels)
+    print(f"Number of channels: {len(channels):d}")
+    print(f"Number of missing channels in middle: {n_missing_channels:d}")
+    print(f"Vertical range: {vertical_position_range:d} μm")
+    print(f"Number of rows: {vertical_position_range // 20 + 1:d}")
+
+
+    #################### Find LFP channels locations in structure ####################
+    # Load LFP given probe
+    lfp_array = session.get_lfp(probe_id)
+    lfp_array.attrs.update(fs=fs)
+
+    # Ensure channels are sorted by vertical position
+    channel_idx = np.argsort(all_channels.loc[lfp_array.channel, 'probe_vertical_position'])
+    if not np.all(np.diff(channel_idx) == 1):
+        lfp_array = lfp_array.isel(channel=channel_idx)
+
+    # get LFP channels in the structure
+    channel_idx = np.nonzero([i in channels.index for i in lfp_array.channel.values])[0]
+    channel_idx_csd = np.copy(channel_idx)  # channel indices for CSD
+
+    padding = [1, 1]  # replicate padding for iCSD boundaries
+    if channel_idx[0] > 0:
+        padding[0] = 0  # no padding if a leading channel exists
+        channel_idx_csd = np.insert(channel_idx_csd, 0, channel_idx[0] - 1)
+    if channel_idx[-1] < lfp_array.channel.size - 1:
+        padding[1] = 0  # no padding if a trailing channel exists
+        channel_idx_csd = np.append(channel_idx_csd, channel_idx[-1] + 1)
+
+    csd_channel_positions = all_channels.loc[lfp_array.channel[channel_idx_csd], 'probe_vertical_position']
+
+    # validate if the spacing between LFP channels is consistent
+    if np.unique(np.diff(csd_channel_positions)).size != 1:
+        raise ValueError('The spacing between LFP channels is not consistent')
+
+    # get LFP channels in the structure
+    channels_id = lfp_array.channel[channel_idx]
+    channels_id_csd = lfp_array.channel[channel_idx_csd]
+
+    # Get dataframe for LFP channels in the structure and get layer of each channel
+    lfp_channels = channels.loc[channels_id]
+    sf = StructureFinder(paths.REFERENCE_SPACE_CACHE_DIR)
+    lfp_channels['layer_acronym'], lfp_channels['inside_structure'] = \
+        sf.get_structure_array(lfp_channels[CCF_COORDS])
+
+    # Get central channels in each layer
+    valid_channels = lfp_channels.loc[lfp_channels['inside_structure']]
+    central_channels = central_channel_in_structure(valid_channels['layer_acronym'])
+    central_channels = {s: int(valid_channels.index[i]) for s, i in central_channels.items()}
+
+    # Select channels for CSD
+    csd_array = compute_csd(
+        lfp=lfp_array.sel(channel=channels_id_csd),
+        positions=csd_channel_positions,
+        sigma_time=csd_sigma_time,
+        sigma_space=csd_sigma_space,
+        padding=padding
+    )
+
+
+    #################### Save data ####################
+    # Get session cache directory
+    session_dir = SessionDirectory(session_id, ecephys_structure_acronym)
+
+    # Save LFP channels info
+    session_dir.save_lfp_channels(lfp_channels)
+
+    # Save probe info
+    session_dir.save_probe_info(probe_id, central_channels, channels_id_csd, padding)
+
+    # Save CSD
+    session_dir.save_csd(csd_array)
+
+
+if __name__ == "__main__":
+    from toolkit.pipeline.batch_process import BatchProcessArgumentParser, process_sessions
+
+    parser = BatchProcessArgumentParser(parameters=PARAMETERS)
+    args = parser.parse_args()
+
+    process_sessions(find_probe_channels, **args)
+

@@ -39,6 +39,7 @@ class SessionDirectory:
         lfp_cache : dict[int, xr.DataArray]
             Dictionary of {probe_id: cached LFP arrays}.
         """
+        self.session_id = session_id
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
         self.exist = self._session_dir.exists()
         self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
@@ -189,3 +190,66 @@ class SessionDirectory:
         channels = self.session.channels.loc[self.get_lfp(probe_id).channel]
         # ensure sorted by vertical position
         return channels.sort_values('probe_vertical_position')
+
+
+    @property
+    def psd(self) -> Path:
+        return self.session_dir / 'psd_channel_groups.nc'
+
+    def save_psd(self, psd_das : dict[str, xr.DataArray], channel_groups : xr.DataArray) -> None:
+        """Save PSD of stimuli into a single dataset.
+        
+        Parameters
+        ----------
+        psd_das : dict[str, xr.DataArray]
+            Dictionary of {stimulus_name: PSD dataarray}.
+        channel_groups : xr.DataArray
+            Channel groups of the LFP data used for PSD calculation.
+        """
+        # Merge all PSDs into a dataset
+        ds_attrs = next(iter(psd_das.values())).attrs
+        ds_attrs = {key: ds_attrs[key] for key in ('fs', 'nfft', 'unit')}
+        ds_attrs['session_id'] = self.session_id
+        psd_ds = xr.Dataset(psd_das | dict(channel_groups=channel_groups), attrs=ds_attrs)
+        psd_ds.to_netcdf(self.psd)
+
+    def load_psd(self) -> xr.Dataset:
+        """Load PSD of stimuli from a single dataset.
+        
+        Returns
+        -------
+        xr.Dataset
+            PSD of stimuli. Unit: uV**2/Hz
+        """
+        return xr.load_dataset(self.psd)
+
+
+    def conditions_psd(self, stimulus_name : str) -> Path:
+        return self.session_dir / f'{stimulus_name}_conditions_psd.nc'
+
+    def save_conditions_psd(self, cond_psd_das : dict[str, xr.DataArray]) -> None:
+        """Save conditions PSD of stimuli into separate data files.
+
+        Parameters
+        ----------
+        cond_psd_das : dict[str, xr.DataArray]
+            Dictionary of {stimulus_name: conditions PSD dataarray}.
+        """
+        for stim, cond_psd in cond_psd_das.items():
+            cond_psd_file = self.conditions_psd(stim)
+            cond_psd.attrs.update(session_id=self.session_id, stimulus_name=stim)
+            cond_psd.to_netcdf(cond_psd_file)
+
+    def load_conditions_psd(self) -> dict[str, xr.DataArray]:
+        """Load conditions PSD of stimuli from separate data files.
+
+        Returns
+        -------
+        dict[str, xr.DataArray]
+            Dictionary of {stimulus_name: conditions PSD dataarray}. Unit: uV**2/Hz
+        """
+        cond_psd_files = list(self.session_dir.glob("*_conditions_psd.nc"))
+        stimulus_names = [f.stem.removesuffix('_conditions_psd') for f in cond_psd_files]
+        cond_psd_das = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, cond_psd_files)}
+        return cond_psd_das
+

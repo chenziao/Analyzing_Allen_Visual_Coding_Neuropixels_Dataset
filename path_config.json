@@ -5,5 +5,6 @@
     "processed_data_cache_dir": "${cache_base_dir}/processed_data_cache",
     "output_base_dir": "output",
     "results_dir": "${output_base_dir}/results",
-    "figure_dir": "${output_base_dir}/figures"
+    "figure_dir": "${output_base_dir}/figures",
+    "batch_log_dir": "${output_base_dir}/batch_logs"
 }

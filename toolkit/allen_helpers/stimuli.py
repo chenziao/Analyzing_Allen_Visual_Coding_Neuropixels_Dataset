@@ -78,11 +78,14 @@ class StimulusTrials:
         Onset times for each trial.
     duration: float
         Median duration for each trial.
+    gap_duration: float
+        Minimum gap duration between trials.
     """
     presentations: pd.DataFrame
     ids: NDArray[int]
     times: NDArray[float]
     duration: float
+    gap_duration: float
 
 
 def get_flashes_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str = 'flashes') -> StimulusTrials:
@@ -92,7 +95,8 @@ def get_flashes_trials(stimulus_presentations : pd.DataFrame, stimulus_name : st
         presentations = presentations,
         ids = presentations.index.values,
         times = presentations['start_time'].values,
-        duration = presentations['duration'].median()
+        duration = presentations['duration'].median(),
+        gap_duration = np.min(presentations['start_time'].values[1:] - presentations['stop_time'].values[:-1])
     )
     return stimulus_trials
 
@@ -109,7 +113,8 @@ def get_gratings_trials(stimulus_presentations : pd.DataFrame, stimulus_name : s
         presentations = presentations,
         ids = presentations.index.values,
         times = presentations['start_time'].values,
-        duration = presentations['duration'].median()
+        duration = presentations['duration'].median(),
+        gap_duration = np.min(presentations['start_time'].values[1:] - presentations['stop_time'].values[:-1])
     )
     return stimulus_trials
 
@@ -126,7 +131,8 @@ def get_scenes_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str
         presentations = presentations,
         ids = presentations.index.values,
         times = presentations['start_time'].values,
-        duration = presentations['duration'].median()
+        duration = presentations['duration'].median(),
+        gap_duration = np.min(presentations['start_time'].values[1:] - presentations['stop_time'].values[:-1])
     )
     return stimulus_trials
 
@@ -144,7 +150,8 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
         presentations = presentations,
         ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values,
         times = presentations_times[:, 0],
-        duration = np.median(np.diff(presentations_times, axis=1))
+        duration = np.median(np.diff(presentations_times, axis=1)),
+        gap_duration = np.min(presentations_times[1:, 0] - presentations_times[:-1, 1])
     )
     return stimulus_trials
 
@@ -375,5 +382,6 @@ def average_across_conditions(
     cond_da = [da.sel(presentation_id=i).mean(dim='presentation_id') for i in cond_presentation_id.values()]
     cond_da = xr.concat(cond_da, dim=pd.Index(cond_presentation_id, name='condition_id'), combine_attrs='override')
     cond_da = cond_da.sel(condition_id=condition_id)
+    cond_da.attrs.update(da.attrs)
     return cond_da
 

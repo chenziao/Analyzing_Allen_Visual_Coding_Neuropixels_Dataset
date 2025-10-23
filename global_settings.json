@@ -1,4 +1,6 @@
 {
+    "session_set": "test",
+    "ecephys_structure_acronym": "VISp",
     "wave_band_limit": {
         "beta": [20.0, 40.0],
         "gamma": [40.0, 80.0],

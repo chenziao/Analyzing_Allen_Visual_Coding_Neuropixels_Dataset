@@ -121,6 +121,7 @@ def trial_psd(
     tseg : float = 1.,
     df : float | None = None,
     poverlap : float = 0.5,
+    window : str = 'hann',
     time_dim : str = 'time_from_presentation_onset'
 ) -> xr.DataArray:
     """Calculate PSD from aligned signal using Welch method
@@ -135,6 +136,8 @@ def trial_psd(
         Frequency resolution in Hz. If None, use frequency resolution around 1/tseg.
     poverlap : float
         Overlap proportion between segments. Must be between 0 and 1.
+    window : str
+        Window function to use for Welch method. See scipy.signal.welch for available options.
     time_dim : str
         Name of the time dimension in seconds.
 
@@ -172,7 +175,8 @@ def trial_psd(
         nfft = int(np.round(fs / df / 2)) * 2  # ensure nfft is even
 
     # calculate PSD using Welch method
-    f, pxx = ss.welch(aligned_signal, fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft, axis=time_axis)
+    f, pxx = ss.welch(aligned_signal, fs=fs, window=window,
+        nperseg=nperseg, noverlap=noverlap, nfft=nfft, axis=time_axis)
 
     del coords[time_dim]
     coords['frequency'] = f

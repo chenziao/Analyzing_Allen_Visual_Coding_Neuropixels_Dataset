@@ -20,12 +20,16 @@ PROCESSED_DATA_CACHE_DIR = resolver.get_path('processed_data_cache_dir')
 OUTPUT_BASE_DIR = resolver.get_path('output_base_dir')
 RESULTS_DIR = resolver.get_path('results_dir')
 FIGURE_DIR = resolver.get_path('figure_dir')
+BATCH_LOG_DIR = resolver.get_path('batch_log_dir')
 
 # Output configuration
 OUTPUT_CONFIG_FILE = ROOT_DIR / 'output_config.json'
 
 # Global settings
 GLOBAL_SETTINGS_FILE = ROOT_DIR / 'global_settings.json'
+
+# Test sessions file
+TEST_SESSIONS_FILE = ROOT_DIR / 'test_sessions.json'
 
 
 __all__ = [
