@@ -38,19 +38,52 @@ pip install -r requirements.txt
 
 - [path_config.json](path_config.json): Set the paths for the cache data and output data.
 
+- [global_settings.json](global_settings.json): Set the global settings and parameters for the analysis.
+
 - [output_config.json](output_config.json): Set the format for the output data.
+
+- [test_sessions.json](test_sessions.json): List of session IDs for test run of batch processing scripts.
 
 ## Analysis Procedures
 
+### Setup on the server
+
+- See [Requirements](#requirements) for how to create a conda environment with the necessary dependencies.
+
+- Set the paths for the cache data and output data in [path_config.json](path_config.json). Suggest using the shared directory on the server `/home/shared/Allen_Visual_Coding_Data` as the root directory.
+
+- Make sure the conda environment is activated before running any script.
+
+- Edit the batch script [batch_run_script.sh](batch_run_script.sh) to run the desired python script under folder `scripts/`. Set the argument `--session_set` to the desired set of sessions to process. Set other arguments if needed. Run `python scripts/[script_name].py -h` to see the available arguments for the script.
+
+- Make sure directory `./stdout/` exists under the root directory of the repository. This is the directory for the output logs of the batch processing scripts.
+
+- Run the batch script `sbatch batch_run_script.sh` to process the sessions.
+
 ### Scripts (for batch processing)
 
-TBA
+After a script finishes running, check the `batch_logs` folder (see `batch_log_dir` in [path_config.json](path_config.json)) for the logs of printed messages and errors. The parameters used for the script are saved in `.json` files in the `batch_logs` folder.
+
+1. [find_probe_channels.py](scripts/find_probe_channels.py)
+
+    - Initial processing: download and cache data from Allen Database.
+    - Find probe channels for the target structure (e.g. VISp).
+    - Compute CSD for the channels in the structure.
+
+2. [process_stimuli_psd.py](scripts/process_stimuli_psd.py)
+
+    - Calculate average PSD of stimuli.
+    - Calculate PSD averaged across each condition of drifting gratings stimuli.
 
 ### Notebooks (for interactive analysis and visualization)
 
 - [Find_Probe_Channels](notebooks/Find_Probe_Channels.ipynb)
 
   Initial processing before analyzing a session. Find the LFP channels in the selected cortical structure and get the central channels in each layer.
+
+- [Spectral_analysis](notebooks/Spectral_analysis.ipynb)
+
+  Calculate PSD of stimuli of a session and apply FOOOF to fit the PSD.
 
 - [CSD_during_stimuli](notebooks/CSD_during_stimuli.ipynb)
 

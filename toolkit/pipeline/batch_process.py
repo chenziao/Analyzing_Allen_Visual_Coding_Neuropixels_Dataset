@@ -42,7 +42,7 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
         return sessions, session_set
 
     if isinstance(session_set, str):
-        session_set = SessionSet(session_set)
+        session_set = SessionSet(session_set.lower())
 
     match session_set:
         case SessionSet.ALL:
@@ -96,7 +96,7 @@ class BatchProcessArgumentParser():
 
     def __init__(self,
         parameters: Sequence[Parameter] | dict[str, dict[str, Any]],
-        session_set: SessionSet | str | list[int] = GLOBAL_SETTINGS.get('session_set'),
+        session_set: SessionSet | str | list[int] | None = None,
     ):
         """Create an argument parser for the batch process script.
 
@@ -108,7 +108,7 @@ class BatchProcessArgumentParser():
             The types of the parameters. If None, the type will be inferred from the default value.
         parameters_help: dict[str, str] = None
             The help text for the parameters. If None, the help text will be only the default value.
-        session_set: SessionSet | str | list[int]
+        session_set: SessionSet | str | list[int] | None
             The default session set to process the sessions from.
             If not provided, the session set will be retrieved from the global settings.
         """
@@ -117,9 +117,12 @@ class BatchProcessArgumentParser():
         self.parameters = {param.name: param for param in parameters}
         self.default_parameters = {param.name: param.default for param in parameters}
 
+        if session_set is None:
+            session_set = GLOBAL_SETTINGS.get('session_set', 'all')
+        available_session_sets = [s.name for s in SessionSet if s != SessionSet.CUSTOM]
+
         # Create argument parser
         self.parser = argparse.ArgumentParser()
-        available_session_sets = [s.name for s in SessionSet if s != SessionSet.CUSTOM]
         self.parser.add_argument(
             '--session_set', type=str, default=session_set,
             help=f"The session set to process the sessions from. Available sets: {', '.join(available_session_sets)}."

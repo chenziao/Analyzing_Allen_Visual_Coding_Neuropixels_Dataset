@@ -1,3 +1,11 @@
+"""
+Batch process sessions for
+
+- Initial processing: download and cache data from Allen Database.
+- Find probe channels for the target structure (e.g. VISp).
+- Compute CSD for the channels in the structure.
+"""
+
 import add_path
 
 PARAMETERS = dict(

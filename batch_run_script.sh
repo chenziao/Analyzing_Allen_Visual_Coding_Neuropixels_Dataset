@@ -19,3 +19,4 @@ python scripts/find_probe_channels.py --session_set all
 END=$(date)
 
 echo "Started running at $START."
+echo "Finished running at $END."
