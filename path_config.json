@@ -1,9 +1,10 @@
 {
-    "cache_base_dir": "cache",
+    "root_dir": "/home/shared/Allen_Visual_Coding_Data",
+    "cache_base_dir": "${root_dir}/cache",
     "ecephys_cache_dir": "${cache_base_dir}/ecephys_cache_dir",
     "reference_space_cache_dir": "${cache_base_dir}/reference_space_cache",
     "processed_data_cache_dir": "${cache_base_dir}/processed_data_cache",
-    "output_base_dir": "output",
+    "output_base_dir": "${root_dir}/output",
     "results_dir": "${output_base_dir}/results",
     "figure_dir": "${output_base_dir}/figures",
     "batch_log_dir": "${output_base_dir}/batch_logs"

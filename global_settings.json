@@ -1,5 +1,5 @@
 {
-    "session_set": "test",
+    "session_set": "all",
     "ecephys_structure_acronym": "VISp",
     "wave_band_limit": {
         "beta": [20.0, 40.0],
