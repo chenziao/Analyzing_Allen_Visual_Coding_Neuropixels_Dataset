@@ -66,11 +66,7 @@ def find_probe_channels(
     channels = all_channels.loc[all_channels['structure_acronym'] == ecephys_structure_acronym]
 
     # get probes for the session and structure (usually only one)
-    def download_probes():
-        return cache.get_probes()
-    
-    probes = run_with_timeout(download_probes, timeout, "Probes data download")
-
+    probes = cache.get_probes()
     probes = probes[probes['ecephys_session_id'] == session_id]
     probes = probes.iloc[
         [ecephys_structure_acronym in x for x in probes['ecephys_structure_acronyms']]
@@ -88,15 +84,19 @@ def find_probe_channels(
     print(f"Vertical range: {vertical_position_range:d} μm")
     print(f"Number of rows: {vertical_position_range // 20 + 1:d}")
 
+    # Load LFP given probe
+    def download_lfp():
+        return session.get_lfp(probe_id)
+
+    lfp_array = run_with_timeout(download_lfp, timeout, f"Probe {probe_id} LFP download")
+    lfp_array.attrs.update(fs=fs)
+
     if cache_data_only:
         print("Cache data only, skipping further processing.")
         return
 
 
     #################### Find LFP channels locations in structure ####################
-    # Load LFP given probe
-    lfp_array = session.get_lfp(probe_id)
-    lfp_array.attrs.update(fs=fs)
 
     # Ensure channels are sorted by vertical position
     channel_idx = np.argsort(all_channels.loc[lfp_array.channel, 'probe_vertical_position'])
