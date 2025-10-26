@@ -25,7 +25,7 @@ PARAMETERS = dict(
         help = "Only cache data, skip further processing."
     ),
     timeout = dict(
-        default = 300,
+        default =1800,
         type = int,
         help = "Timeout for halting downloads in seconds. "
             "Set to 0 to disable timeout."
@@ -38,7 +38,7 @@ def find_probe_channels(
     csd_sigma_time: float = 1.6,
     csd_sigma_space: float = 40.0,
     cache_data_only: bool = False,
-    timeout: int = 300
+    timeout: int = 1800
 ):
     import numpy as np
     from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache

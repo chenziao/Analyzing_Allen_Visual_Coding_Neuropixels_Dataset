@@ -345,6 +345,7 @@ def process_sessions(
     sessions, session_set = get_sessions(session_set)
     if use_blacklist:
         sessions, blacklist_sessions = filter_blacklist_sessions(sessions)
+    aborted_sessions = []
 
     # Get log file and parameters file
     script_name, timestamp = get_log_info(process_function)
@@ -386,10 +387,11 @@ def process_sessions(
             try:
                 process_function(session, **parameters)
             except Exception as e:
+                aborted_sessions.append(session)
                 print(f"\n\n[ERROR] Exception occurred while processing session {session}:\n")
                 traceback.print_exc()
                 print("\n\n" + "-" * 80)
-                print(f"Session {session} processed aborted at {get_timestamp()}\n")
+                print(f"Session {session} aborted at {get_timestamp()}\n")
             else:
                 print("\n\n" + "-" * 80)
                 print(f"Session {session} processed successfully at {get_timestamp()}\n")
@@ -398,3 +400,10 @@ def process_sessions(
         print("\n" + "=" * 80)
         print(f"\nProcessing completed at {get_timestamp()}")
 
+        # Print aborted sessions
+        print(f"\nNumber of successfully processed sessions: {len(sessions) - len(aborted_sessions)}")
+        if aborted_sessions:
+            print(f"Number of aborted sessions: {len(aborted_sessions)}")
+            print("\nAborted sessions:")
+            for session in aborted_sessions:
+                print(f"  {session}")
