@@ -11,6 +11,8 @@ from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProj
 from ..utils.quantity_units import convert_unit, units_equal
 from ..paths import *
 
+from typing import Any
+
 if TYPE_CHECKING:
     from allensdk.brain_observatory.ecephys.ecephys_session import EcephysSession
 
@@ -38,14 +40,20 @@ class SessionDirectory:
             EcephysSession object.
         lfp_cache : dict[int, xr.DataArray]
             Dictionary of {probe_id: cached LFP arrays}.
+        probe_id : int | None
+            Probe ID. None if no probe info is available.
+        has_lfp_data : bool
+            Whether the probe has LFP data.
         """
         self.session_id = session_id
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
         self.exist = self._session_dir.exists()
         self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
-        self.session : EcephysSession = self.cache.get_session_data(session_id)
+        self._session : EcephysSession | None = None
         self._cache_lfp = cache_lfp
         self.lfp_cache : dict[int, xr.DataArray] = {}
+        self._probe_id = None
+        self._has_lfp_data = None
 
     @property
     def session_dir(self) -> Path:
@@ -53,16 +61,23 @@ class SessionDirectory:
             self._session_dir.mkdir(parents=True, exist_ok=True)
         return self._session_dir
 
+    @property
+    def probe_id(self) -> int:
+        if self._probe_id is None:
+            self.load_probe_info()
+        return self._probe_id
 
     @property
-    def lfp_channels(self) -> Path:
-        return self.session_dir / 'lfp_channels.csv'
+    def has_lfp_data(self) -> bool:
+        if self._has_lfp_data is None:
+            self.load_probe_info()
+        return self._has_lfp_data
 
-    def save_lfp_channels(self, lfp_channels : pd.DataFrame) -> None:
-        lfp_channels.to_csv(self.lfp_channels)
-
-    def load_lfp_channels(self) -> pd.DataFrame:
-        return pd.read_csv(self.lfp_channels, index_col='id')
+    @property
+    def session(self) -> EcephysSession:
+        if self._session is None:
+            self._session : EcephysSession = self.cache.get_session_data(self.session_id)
+        return self._session
 
 
     @property
@@ -90,6 +105,7 @@ class SessionDirectory:
             Padding used for CSD calculation.
         """
         probe_info = dict(
+            has_lfp_data = True,
             probe_id = int(probe_id),
             central_channels = {k: int(v) for k, v in central_channels.items()},
             csd_channels = [int(v) for v in csd_channels],
@@ -98,9 +114,39 @@ class SessionDirectory:
         with open(self.probe_info, 'w') as f:
             json.dump(probe_info, f, indent=4)
 
+    def save_null_probe_info(self) -> None:
+        """Save null probe information (no LFP data) to a JSON file."""
+        probe_info = dict(
+            has_lfp_data = False,
+            probe_id = None,
+            central_channels = None,
+            csd_channels = None,
+            csd_padding = None
+        )
+        with open(self.probe_info, 'w') as f:
+            json.dump(probe_info, f, indent=4)
+
     def load_probe_info(self) -> dict:
+        if not self.probe_info.exists():
+            raise FileNotFoundError(f"Probe info file {self.probe_info} not found")
+
         with open(self.probe_info, 'r') as f:
-            return json.load(f)
+            probe_info = json.load(f)
+
+        self._probe_id = probe_info['probe_id']
+        self._has_lfp_data = bool(probe_info.get('has_lfp_data', self._probe_id is not None))
+        return probe_info
+
+
+    @property
+    def lfp_channels(self) -> Path:
+        return self.session_dir / 'lfp_channels.csv'
+
+    def save_lfp_channels(self, lfp_channels : pd.DataFrame) -> None:
+        lfp_channels.to_csv(self.lfp_channels)
+
+    def load_lfp_channels(self) -> pd.DataFrame:
+        return pd.read_csv(self.lfp_channels, index_col='id')
 
 
     @property
@@ -121,19 +167,22 @@ class SessionDirectory:
         return xr.load_dataarray(self.csd)
 
 
-    def get_lfp(self, probe_id : int) -> xr.DataArray:
+    def get_lfp(self, probe_id : int | None = None) -> xr.DataArray:
         """Get LFP array from allensdk session cache and cache in memory.
 
         Parameters
         ----------
-        probe_id : int
-            Probe ID.
+        probe_id : int | None
+            Probe ID. If not provided, use the probe ID from the probe info file.
 
         Returns
         -------
         xr.DataArray
             LFP data. Unit: V
         """
+        if probe_id is None:
+            probe_id = self.probe_id
+
         if self._cache_lfp and probe_id in self.lfp_cache:
             return self.lfp_cache[probe_id]
 
@@ -149,17 +198,25 @@ class SessionDirectory:
     def clear_lfp_cache(self) -> None:
         self.lfp_cache.clear()
 
-    def load_lfp(self, probe_id, channel=None, time=None, unit='uV'):
+    def load_lfp(
+        self,
+        probe_id : int | None = None,
+        channel : Any | None = None,
+        time : Any | None = None,
+        unit : str = 'uV'
+    ) -> xr.DataArray:
         """Load LFP array from cache with optional selection of channels and time.
 
         Parameters
         ----------
-        probe_id : int
-            Probe ID.
-        channel : list[int], optional
+        probe_id : int | None
+            Probe ID. If not provided, use the probe ID from the probe info file.
+        channel : xarray indexer, optional
             Channels to load.
-        time : list[int], optional
+        time : xarray indexer, optional
             Time to load.
+        unit : str
+            Desired unit of the LFP data. Default is 'uV'.
 
         Returns
         -------
@@ -179,13 +236,13 @@ class SessionDirectory:
             lfp_array = convert_unit(lfp_array, src_unit, unit, copy=False)
         return lfp_array
 
-    def probe_lfp_channels(self, probe_id : int) -> pd.DataFrame:
+    def probe_lfp_channels(self, probe_id : int | None = None) -> pd.DataFrame:
         """Load channels for a given probe.
         
         Parameters
         ----------
-        probe_id : int
-            Probe ID.
+        probe_id : int | None
+            Probe ID. If not provided, use the probe ID from the probe info file.
         """
         channels = self.session.channels.loc[self.get_lfp(probe_id).channel]
         # ensure sorted by vertical position

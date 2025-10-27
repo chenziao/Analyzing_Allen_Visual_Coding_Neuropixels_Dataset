@@ -66,11 +66,25 @@ def find_probe_channels(
     channels = all_channels.loc[all_channels['structure_acronym'] == ecephys_structure_acronym]
 
     # get probes for the session and structure (usually only one)
+    no_lfp_error = None
     probes = cache.get_probes()
     probes = probes[probes['ecephys_session_id'] == session_id]
     probes = probes.iloc[
         [ecephys_structure_acronym in x for x in probes['ecephys_structure_acronyms']]
     ]
+
+    if not len(probes):
+        no_lfp_error = ValueError(f"No probes containing {ecephys_structure_acronym} found for session {session_id}")
+
+    # check if the probes have lfp data
+    if not no_lfp_error and not any(probes['has_lfp_data']):
+        no_lfp_error = ValueError(f"Probe {', '.join(map(str, probes.index))} has no LFP data")
+    probes = probes[probes['has_lfp_data']]
+
+    if no_lfp_error:  # save null probe info and raise error
+        session_dir = SessionDirectory(session_id, ecephys_structure_acronym)
+        session_dir.save_null_probe_info()
+        raise no_lfp_error
 
     # get the probe with the most channels in the structure
     n_channels_in_probe =  [np.count_nonzero(channels['probe_id'] == i) for i in probes.index]
@@ -159,11 +173,11 @@ def find_probe_channels(
     # Get session cache directory
     session_dir = SessionDirectory(session_id, ecephys_structure_acronym)
 
-    # Save LFP channels info
-    session_dir.save_lfp_channels(lfp_channels)
-
     # Save probe info
     session_dir.save_probe_info(probe_id, central_channels, channels_id_csd, padding)
+
+    # Save LFP channels info
+    session_dir.save_lfp_channels(lfp_channels)
 
     # Save CSD
     session_dir.save_csd(csd_array)

@@ -41,9 +41,13 @@ def process_stimuli_psd(
     ecephys_structure_acronym = GLOBAL_SETTINGS.get('ecephys_structure_acronym')
 
     session_dir = SessionDirectory(session_id, ecephys_structure_acronym, cache_lfp=True)
-    session = session_dir.session
 
     probe_info = session_dir.load_probe_info()
+    if not session_dir.has_lfp_data:  # Skip session if it has no LFP data
+        print(f"Session {session_id} has no LFP data. Skipping...")
+        return
+
+    session = session_dir.session
 
     lfp_groups, channel_groups = ps.get_lfp_channel_groups(
         session_dir, probe_info['central_channels'], width=group_width

@@ -107,7 +107,7 @@ def get_lfp_channel_groups(
 
     # Load LFP data for unique channels
     unique_channels = list(dict.fromkeys(channel_groups.values.ravel()))  # unique channels
-    lfp_array = session_dir.load_lfp(probe_id, channel=unique_channels, **load_lfp_kwargs)
+    lfp_array = session_dir.load_lfp(probe_id=probe_id, channel=unique_channels, **load_lfp_kwargs)
 
     # Average LFP for each group
     lfp_groups = lfp_array.sel(channel=channel_groups).mean(
