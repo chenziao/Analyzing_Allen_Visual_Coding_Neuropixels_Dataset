@@ -14,7 +14,7 @@
 START=$(date)
 
 unset DISPLAY
-python scripts/find_probe_channels.py --session_set all --cache_data_only
+python scripts/find_probe_channels.py --session_set all
 
 END=$(date)
 

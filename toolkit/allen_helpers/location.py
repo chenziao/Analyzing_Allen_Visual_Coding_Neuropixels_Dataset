@@ -20,6 +20,44 @@ CCF_COORDS = [
 CCF_AXES = dict(zip(['AP', 'DV', 'ML'], CCF_COORDS))  # map: axis acronym -> CCF coordinate name
 
 
+def fill_missing_linear_channels(channels_df : pd.DataFrame, channels : NDArray[int]) -> pd.DataFrame:
+    """Fill missing channels with neighbor channels values and linear interpolate positional values.
+    
+    Parameters
+    ----------
+    channels_df : pd.DataFrame
+        DataFrame of existing channels from a single probe with Allen SDK channels table format.
+    channels : NDArray[int]
+        Array of a linear array of channels to be filled (matches lfp xarray 'channel').
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with all channels filled.
+    """
+    if channels_df['probe_id'].nunique() > 1:
+        raise ValueError("Channels must be from the same probe.")
+
+    # Create missing channels with neighbor channels values
+    missing_channels = np.setdiff1d(channels, channels_df.index)
+    if len(missing_channels) == 0:
+        return channels_df.copy()
+    neighbor_channels = channels_df.index.get_indexer(missing_channels, method='nearest')
+    filled_channels = channels_df.iloc[neighbor_channels].copy()
+    filled_channels.index = missing_channels
+
+    # Interpolate positional values for missing channels
+    int_cols = ['probe_channel_number', 'probe_horizontal_position', 'probe_vertical_position']
+    interpolated_cols = int_cols + CCF_COORDS
+    filled_channels[interpolated_cols] = np.nan  # set to nan to be interpolated
+    filled_channels_df = pd.concat([channels_df, filled_channels]).sort_index()  # combine with existing channels
+    filled_channels_df[interpolated_cols] = filled_channels_df[interpolated_cols].interpolate(method='linear')
+    # Round all values following allen standard
+    filled_channels_df.loc[missing_channels] = np.round(filled_channels_df.loc[missing_channels])
+    filled_channels_df[int_cols] = filled_channels_df[int_cols].astype(int)
+    return filled_channels_df
+
+
 def get_lfp_channel_positions(cache_dir : str | Path, session_id : int, probe_id : int) -> pd.DataFrame:
     """
     Return electrode positions for the LFP channels of a given probe,

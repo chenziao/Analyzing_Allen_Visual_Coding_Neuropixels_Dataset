@@ -46,7 +46,7 @@ def find_probe_channels(
     from toolkit import paths
     from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
     from toolkit.allen_helpers.location import CCF_COORDS
-    from toolkit.allen_helpers.location import StructureFinder, central_channel_in_structure
+    from toolkit.allen_helpers.location import fill_missing_linear_channels, StructureFinder, central_channel_in_structure
     from toolkit.analysis.signal import compute_csd
     from toolkit.pipeline.data_io import SessionDirectory
 
@@ -77,6 +77,10 @@ def find_probe_channels(
     probe_id = probes.index[np.argmax(n_channels_in_probe)]
     fs = probes.loc[probe_id, 'lfp_sampling_rate']
 
+    # channels in the probe sorted by probe_channel_number
+    probe_channels = all_channels.loc[all_channels['probe_id'] == probe_id].sort_values('probe_channel_number')
+
+    # overview of channels layout in the structure
     vertical_position_range = channels['probe_vertical_position'].max() - channels['probe_vertical_position'].min()
     n_missing_channels = channels['probe_channel_number'].max() - channels['probe_channel_number'].min() + 1 - len(channels)
     print(f"Number of channels: {len(channels):d}")
@@ -98,8 +102,14 @@ def find_probe_channels(
 
     #################### Find LFP channels locations in structure ####################
 
+    # fill possible missing channels
+    probe_channels = fill_missing_linear_channels(probe_channels, lfp_array.channel)
+
+    # get channels in the structure in the probe
+    channels = probe_channels.loc[probe_channels['structure_acronym'] == ecephys_structure_acronym]
+
     # Ensure channels are sorted by vertical position
-    channel_idx = np.argsort(all_channels.loc[lfp_array.channel, 'probe_vertical_position'])
+    channel_idx = np.argsort(probe_channels.loc[lfp_array.channel, 'probe_vertical_position'])
     if not np.all(np.diff(channel_idx) == 1):
         lfp_array = lfp_array.isel(channel=channel_idx)
 
@@ -115,15 +125,14 @@ def find_probe_channels(
         padding[1] = 0  # no padding if a trailing channel exists
         channel_idx_csd = np.append(channel_idx_csd, channel_idx[-1] + 1)
 
-    csd_channel_positions = all_channels.loc[lfp_array.channel[channel_idx_csd], 'probe_vertical_position']
+    channels_id = lfp_array.channel[channel_idx]
+    channels_id_csd = lfp_array.channel[channel_idx_csd]
+
+    csd_channel_positions = probe_channels.loc[channels_id_csd, 'probe_vertical_position']
 
     # validate if the spacing between LFP channels is consistent
     if np.unique(np.diff(csd_channel_positions)).size != 1:
         raise ValueError('The spacing between LFP channels is not consistent')
-
-    # get LFP channels in the structure
-    channels_id = lfp_array.channel[channel_idx]
-    channels_id_csd = lfp_array.channel[channel_idx_csd]
 
     # Get dataframe for LFP channels in the structure and get layer of each channel
     lfp_channels = channels.loc[channels_id]
