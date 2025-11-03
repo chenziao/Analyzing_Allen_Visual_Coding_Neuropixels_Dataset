@@ -35,12 +35,9 @@ def process_stimuli_psd(
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
     from toolkit.pipeline.data_io import SessionDirectory
-    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
 
     #################### Get session and probe ####################
-    ecephys_structure_acronym = GLOBAL_SETTINGS.get('ecephys_structure_acronym')
-
-    session_dir = SessionDirectory(session_id, ecephys_structure_acronym, cache_lfp=True)
+    session_dir = SessionDirectory(session_id, cache_lfp=True)
 
     probe_info = session_dir.load_probe_info()
     if not session_dir.has_lfp_data:  # Skip session if it has no LFP data

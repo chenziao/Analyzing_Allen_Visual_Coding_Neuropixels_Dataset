@@ -10,6 +10,7 @@ from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProj
 
 from ..utils.quantity_units import convert_unit, units_equal
 from ..paths import *
+from ..pipeline.global_settings import GLOBAL_SETTINGS
 
 from typing import Any
 
@@ -17,8 +18,16 @@ if TYPE_CHECKING:
     from allensdk.brain_observatory.ecephys.ecephys_session import EcephysSession
 
 
+STRUCTURE_ACRONYM = GLOBAL_SETTINGS['ecephys_structure_acronym']
+
+
 class SessionDirectory:
-    def __init__(self, session_id : int, structure_acronym : str, cache_lfp : bool = False):
+    def __init__(
+        self,
+        session_id : int,
+        structure_acronym : str = STRUCTURE_ACRONYM,
+        cache_lfp : bool = False
+    ):
         """Get the cache directory for a given session and structure.
 
         Parameters
@@ -244,9 +253,16 @@ class SessionDirectory:
         probe_id : int | None
             Probe ID. If not provided, use the probe ID from the probe info file.
         """
-        channels = self.session.channels.loc[self.get_lfp(probe_id).channel]
+        from toolkit.allen_helpers.location import fill_missing_linear_channels
+        # get probe channels
+        all_channels = self.session.channels
+        probe_channels = all_channels.loc[all_channels['probe_id'] == probe_id].sort_values('probe_channel_number')
+        # fill possible missing lfp channels in the probe
+        lfp_channels = self.get_lfp(probe_id).channel
+        probe_channels = fill_missing_linear_channels(probe_channels, lfp_channels)
         # ensure sorted by vertical position
-        return channels.sort_values('probe_vertical_position')
+        channels = probe_channels.loc[lfp_channels].sort_values('probe_vertical_position')
+        return channels
 
 
     @property

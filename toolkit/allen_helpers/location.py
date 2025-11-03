@@ -55,6 +55,8 @@ def fill_missing_linear_channels(channels_df : pd.DataFrame, channels : NDArray[
     # Round all values following allen standard
     filled_channels_df.loc[missing_channels] = np.round(filled_channels_df.loc[missing_channels])
     filled_channels_df[int_cols] = filled_channels_df[int_cols].astype(int)
+    # set index name to be the same
+    filled_channels_df.index.name = channels_df.index.name
     return filled_channels_df
 
 
@@ -144,8 +146,10 @@ class StructureFinder:
         self.structure = self.tree.get_structures_by_acronym([self.structure_acronym])[0]
 
         # Get layer structures
-        self.layer_structures = self.tree.children([self.structure['id']])[0]
-        self.layer_structures = {s['acronym']: s for s in self.layer_structures}  # index by acronym
+        layer_structures = self.tree.children([self.structure['id']])[0]
+        self.layer_structures = {s['acronym']: s for s in layer_structures}  # index by acronym
+        # map to simpler acronyms
+        self.layer_acronym_map = {s: s.removeprefix(structure_acronym) for s in self.layer_structures}
 
         # CCF annotation
         self._annotation : NDArray[int] | None = None
@@ -278,18 +282,17 @@ class StructureFinder:
         layer_acronym = [s['acronym'] if s else '' for s in structure_array]
 
         structure_id = self.structure['id']
-        structure_acronym = self.structure['acronym']
         inside_structure = []
         for i, s in enumerate(structure_array):
             parent_id = -1 if s is None else self.tree.parents([s['id']])[0]['id']
             inside = parent_id == structure_id
             inside_structure.append(inside)
             if inside:
-                layer_acronym[i] = layer_acronym[i].removeprefix(structure_acronym)
+                layer_acronym[i] = self.layer_acronym_map[layer_acronym[i]]
         return layer_acronym, inside_structure
 
 
-def central_channel_in_structure(layer_acronyms : ArrayLike, structure_acronym : str = 'VISp') -> dict[str, int]:
+def central_channel_in_structure(layer_acronyms : ArrayLike) -> dict[str, int]:
     """Find the central channel in the structure given an array of layer acronyms for each channel."""
     layer_acronyms = np.asarray(layer_acronyms, dtype=str)
     # get unique layer structures preserving order

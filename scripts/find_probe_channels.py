@@ -24,8 +24,13 @@ PARAMETERS = dict(
         type = bool,
         help = "Only cache data, skip further processing."
     ),
+    skip_compute_csd = dict(
+        default = False,
+        type = bool,
+        help = "Whether to compute CSD."
+    ),
     timeout = dict(
-        default =1800,
+        default = 1800,
         type = int,
         help = "Timeout for halting downloads in seconds. "
             "Set to 0 to disable timeout."
@@ -38,6 +43,7 @@ def find_probe_channels(
     csd_sigma_time: float = 1.6,
     csd_sigma_space: float = 40.0,
     cache_data_only: bool = False,
+    skip_compute_csd: bool = False,
     timeout: int = 1800
 ):
     import numpy as np
@@ -150,7 +156,7 @@ def find_probe_channels(
 
     # Get dataframe for LFP channels in the structure and get layer of each channel
     lfp_channels = channels.loc[channels_id]
-    sf = StructureFinder(paths.REFERENCE_SPACE_CACHE_DIR)
+    sf = StructureFinder(paths.REFERENCE_SPACE_CACHE_DIR, structure_acronym=ecephys_structure_acronym)
     lfp_channels['layer_acronym'], lfp_channels['inside_structure'] = \
         sf.get_structure_array(lfp_channels[CCF_COORDS])
 
@@ -160,13 +166,14 @@ def find_probe_channels(
     central_channels = {s: int(valid_channels.index[i]) for s, i in central_channels.items()}
 
     # Select channels for CSD
-    csd_array = compute_csd(
-        lfp=lfp_array.sel(channel=channels_id_csd),
-        positions=csd_channel_positions,
-        sigma_time=csd_sigma_time,
-        sigma_space=csd_sigma_space,
-        padding=padding
-    )
+    if not skip_compute_csd:
+        csd_array = compute_csd(
+            lfp=lfp_array.sel(channel=channels_id_csd),
+            positions=csd_channel_positions,
+            sigma_time=csd_sigma_time,
+            sigma_space=csd_sigma_space,
+            padding=padding
+        )
 
 
     #################### Save data ####################
@@ -180,7 +187,8 @@ def find_probe_channels(
     session_dir.save_lfp_channels(lfp_channels)
 
     # Save CSD
-    session_dir.save_csd(csd_array)
+    if not skip_compute_csd:
+        session_dir.save_csd(csd_array)
 
 
 if __name__ == "__main__":
