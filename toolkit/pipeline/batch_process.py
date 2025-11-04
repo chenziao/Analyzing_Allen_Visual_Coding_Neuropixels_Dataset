@@ -35,8 +35,10 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
 
     Returns
     -------
-    list[int]
+    sessions : list[int]
         The list of sessions from the session set.
+    session_set : SessionSet
+        The session set.
     """
     if isinstance(session_set, list):
         sessions = session_set

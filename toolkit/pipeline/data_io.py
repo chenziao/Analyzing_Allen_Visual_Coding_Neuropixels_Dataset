@@ -16,9 +16,47 @@ from typing import Any
 
 if TYPE_CHECKING:
     from allensdk.brain_observatory.ecephys.ecephys_session import EcephysSession
+    from toolkit.pipeline.batch_process import SessionSet
 
 
 STRUCTURE_ACRONYM = GLOBAL_SETTINGS['ecephys_structure_acronym']
+
+
+def get_existing_sessions(
+    session_set : SessionSet | str | list[int],
+    structure_acronym : str = STRUCTURE_ACRONYM
+) -> tuple[list[int], list[int]]:
+    """Get the existing sessions in the data cache directory.
+    
+    Parameters
+    ----------
+    session_set : SessionSet | str | list[int]
+        The session set to get the sessions from.
+    structure_acronym : str
+        The structure acronym to get the sessions from.
+
+    Returns
+    -------
+    session_list : list[int]
+        The list of existing sessions.
+    missing_sessions : list[int]
+        The list of missing sessions.
+    """
+    from toolkit.pipeline.batch_process import get_sessions
+    data_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym
+    session_list = []
+    missing_sessions = []
+    for s in get_sessions(session_set)[0]:
+        f = data_dir / str(s)
+        if f.is_dir():
+            session_list.append(s)
+        else:
+            missing_sessions.append(s)
+
+    if missing_sessions:
+        print("Sessions missing from the data cache directory:")
+        print('\n'.join(map(str, missing_sessions)))
+    return session_list, missing_sessions
 
 
 class SessionDirectory:
