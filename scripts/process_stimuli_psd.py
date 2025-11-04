@@ -46,9 +46,8 @@ def process_stimuli_psd(
 
     session = session_dir.session
 
-    lfp_groups, channel_groups = ps.get_lfp_channel_groups(
-        session_dir, probe_info['central_channels'], width=group_width
-    )
+    lfp_groups, channel_groups = ps.get_lfp_channel_groups(session_dir,
+        probe_info['central_channels'], probe_id=probe_info['probe_id'], width=group_width)
 
 
     #################### Analyze data ####################

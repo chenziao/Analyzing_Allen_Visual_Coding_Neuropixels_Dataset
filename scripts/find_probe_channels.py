@@ -87,40 +87,50 @@ def find_probe_channels(
         no_lfp_error = ValueError(f"Probe {', '.join(map(str, probes.index))} has no LFP data")
     probes = probes[probes['has_lfp_data']]
 
-    if no_lfp_error:  # save null probe info and raise error
-        session_dir = SessionDirectory(session_id, ecephys_structure_acronym)
-        session_dir.save_null_probe_info()
-        raise no_lfp_error
+    if not no_lfp_error:
+        # get the probe with the most channels in the structure
+        n_channels_in_probe =  [np.count_nonzero(channels['probe_id'] == i) for i in probes.index]
+        probe_id = probes.index[np.argmax(n_channels_in_probe)]
+        fs = probes.loc[probe_id, 'lfp_sampling_rate']
 
-    # get the probe with the most channels in the structure
-    n_channels_in_probe =  [np.count_nonzero(channels['probe_id'] == i) for i in probes.index]
-    probe_id = probes.index[np.argmax(n_channels_in_probe)]
-    fs = probes.loc[probe_id, 'lfp_sampling_rate']
+        # Load LFP given probe
+        def download_lfp():
+            return session.get_lfp(probe_id)
 
-    # channels in the probe sorted by probe_channel_number
-    probe_channels = all_channels.loc[all_channels['probe_id'] == probe_id].sort_values('probe_channel_number')
+        lfp_array = run_with_timeout(download_lfp, timeout, f"Probe {probe_id} LFP download")
+        lfp_array.attrs.update(fs=fs)
 
-    # overview of channels layout in the structure
-    vertical_position_range = channels['probe_vertical_position'].max() - channels['probe_vertical_position'].min()
-    n_missing_channels = channels['probe_channel_number'].max() - channels['probe_channel_number'].min() + 1 - len(channels)
-    print(f"Number of channels: {len(channels):d}")
-    print(f"Number of missing channels in middle: {n_missing_channels:d}")
-    print(f"Vertical range: {vertical_position_range:d} μm")
-    print(f"Number of rows: {vertical_position_range // 20 + 1:d}")
+        # check if the LFP data has missing time durations
+        missing_time_points = np.count_nonzero(lfp_array.time < 0)
+        start_time = lfp_array.time[0].item()
+        print(f"LFP data starts at {start_time:.2f} seconds")
+        if missing_time_points > 1:
+            missing_time_durations = missing_time_points / fs + start_time
+            no_lfp_error = ValueError(f"LFP in probe {probe_id} has missing time durations: ~{missing_time_durations:.2f} seconds.")
 
-    # Load LFP given probe
-    def download_lfp():
-        return session.get_lfp(probe_id)
-
-    lfp_array = run_with_timeout(download_lfp, timeout, f"Probe {probe_id} LFP download")
-    lfp_array.attrs.update(fs=fs)
+    if not no_lfp_error:
+        # overview of channels layout in the structure
+        vertical_position_range = channels['probe_vertical_position'].max() - channels['probe_vertical_position'].min()
+        n_missing_channels = channels['probe_channel_number'].max() - channels['probe_channel_number'].min() + 1 - len(channels)
+        print(f"Number of channels: {len(channels):d}")
+        print(f"Number of missing channels in middle: {n_missing_channels:d}")
+        print(f"Vertical range: {vertical_position_range:d} μm")
+        print(f"Number of rows: {vertical_position_range // 20 + 1:d}")
 
     if cache_data_only:
         print("Cache data only, skipping further processing.")
         return
 
+    if no_lfp_error:  # save null probe info and raise error
+        session_dir = SessionDirectory(session_id, ecephys_structure_acronym)
+        session_dir.save_null_probe_info()
+        raise no_lfp_error
+
 
     #################### Find LFP channels locations in structure ####################
+
+    # channels in the probe sorted by probe_channel_number
+    probe_channels = all_channels.loc[all_channels['probe_id'] == probe_id].sort_values('probe_channel_number')
 
     # fill possible missing channels
     probe_channels = fill_missing_linear_channels(probe_channels, lfp_array.channel)

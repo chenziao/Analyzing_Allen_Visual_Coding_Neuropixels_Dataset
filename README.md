@@ -71,17 +71,18 @@ pip install -r requirements.txt
       - `selected`: Selected sessions recorded in `session_selection.csv` file in the `output` folder (see `output_base_dir` in [path_config.json](path_config.json)).
       - `optotag`: Optotag sessions. (Not implemented yet)
     - `--session_list`: List of session IDs to process (space-separated). `--session_set` argument will be ignored if this is provided.
-    - `--use_blacklist`: Use sessions blacklist to exclude sessions to process. The blacklist is listed in `'blacklist'` key of [sessions.json](sessions.json).
+    - `--use_blacklist`: Use sessions blacklist to exclude sessions to process to avoid uncaught errors in some sessions that may cause the batch processing to stall. The blacklist is listed in `'blacklist'` key of [sessions.json](sessions.json).
     - `--disable_logging`: Disable logging to the log file.
 
 #### Scripts (execute in order, later scripts may depend on the results of previous scripts)
 
 1. [find_probe_channels.py](scripts/find_probe_channels.py)
 
-    - Initial processing: download and cache data from Allen Database.
+    - Initial processing: download and cache data from Allen Database. If `--cache_data_only` is set to `True`, the script will only perform this step and skip further processing.
     - Find probe channels for the target structure (e.g. VISp).
-    - Compute CSD for the channels in the structure.
-    - If `--cache_data_only` is set to `True`, the script will only download and cache the data and skip further processing.
+    - Compute CSD for the channels in the structure. If `--skip_compute_csd` is set to `True`, the script will skip computing CSD.
+
+    Note: Run the notebook [check_channel_layer_positions](notebooks/check_channel_layer_positions.ipynb) to overwrite the probe info file and LFP channels file whose layer positions are missing to avoid errors in further processing.
 
 2. [process_stimuli_psd.py](scripts/process_stimuli_psd.py)
 
@@ -93,6 +94,10 @@ pip install -r requirements.txt
 - [Find_Probe_Channels](notebooks/Find_Probe_Channels.ipynb)
 
   Initial processing before analyzing a session. Find the LFP channels in the selected cortical structure and get the central channels in each layer.
+
+- [check_channel_layer_positions](notebooks/check_channel_layer_positions.ipynb)
+
+  Check the layer positions of the LFP channels in the selected structure. Some sessions may have LFP channels with missing CCF coordinates. The layer positions are guessed by the vertical position of the channels according to the average portion of boundaries between layers estimated from the sessions with CCF coordinates. Overwrite the probe info file and LFP channels file with guessed layer for the channels.
 
 - [Spectral_analysis](notebooks/Spectral_analysis.ipynb)
 

@@ -66,7 +66,8 @@ def get_lfp_channel_groups(
     central_channels : dict,
     probe_id : int | None = None,
     width : int = 0,
-    sort_by : str = 'dorsal_ventral_ccf_coordinate',
+    sort_by : str = 'probe_vertical_position',
+    sort_ascending : bool = False,
     **load_lfp_kwargs
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """Get groups of channels around central channel of each layer
@@ -85,6 +86,8 @@ def get_lfp_channel_groups(
         Total number of channels in the group is 2 * width + 1.
     sort_by : str
         Column name in `session.channels` to sort the central channels by.
+    sort_ascending : bool
+        Whether to sort the central channels in ascending or descending order.
     **load_lfp_kwargs
         Additional arguments to pass to session_dir.load_lfp.
 
@@ -93,17 +96,25 @@ def get_lfp_channel_groups(
     tuple[xr.DataArray, xr.DataArray]
         Average LFP for each group, channel groups.
     """
-    all_channels = session_dir.session.channels
-
     if probe_id is None:
-        probe_id = all_channels.loc[next(iter(central_channels.values())), 'probe_id']
+        all_channels = session_dir.session.channels
+        for channel in central_channels.values():
+            if channel in all_channels.index:
+                probe_id = all_channels.loc[channel, 'probe_id']
+                break
+        else:
+            raise ValueError("No probe ID found for any of the central channels")
 
     # Get channel groups with layer order sorted by `sort_by` of central channels
-    idx = all_channels.loc[central_channels.values(), sort_by].argsort()
+    probe_channels = session_dir.probe_lfp_channels(probe_id)
+    central_channels_sortby_values = probe_channels.loc[central_channels.values(), sort_by]
+    if any(central_channels_sortby_values.isna()):
+        raise ValueError("Central channels have missing values in `sort_by` column")
+    idx = central_channels_sortby_values.argsort()
+    if not sort_ascending:
+        idx = idx[::-1]
     channel_groups = get_layer_channel_groups(
-        session_dir.probe_lfp_channels(probe_id).index,
-        central_channels, width=width
-    ).isel(layer=idx)
+        probe_channels.index, central_channels, width=width).isel(layer=idx)
 
     # Load LFP data for unique channels
     unique_channels = list(dict.fromkeys(channel_groups.values.ravel()))  # unique channels

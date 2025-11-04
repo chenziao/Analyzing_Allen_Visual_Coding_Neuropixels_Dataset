@@ -98,7 +98,8 @@ class SessionDirectory:
         probe_id : int,
         central_channels : dict[str, int],
         csd_channels : list[int],
-        csd_padding : tuple[int, int]
+        csd_padding : tuple[int, int],
+        **kwargs
     ) -> None:
         """Save probe information to a JSON file.
         
@@ -112,14 +113,16 @@ class SessionDirectory:
             Channels used for CSD calculation.
         csd_padding : tuple[int, int]
             Padding used for CSD calculation.
+        kwargs : dict
+            Additional information to save.
         """
-        probe_info = dict(
+        probe_info = dict(  # ensure dict type for JSON serialization
             has_lfp_data = True,
             probe_id = int(probe_id),
             central_channels = {k: int(v) for k, v in central_channels.items()},
             csd_channels = [int(v) for v in csd_channels],
             csd_padding = csd_padding
-        )
+        ) | kwargs
         with open(self.probe_info, 'w') as f:
             json.dump(probe_info, f, indent=4)
 
