@@ -318,7 +318,7 @@ def align_trials_from_blocks(
 
 def presentation_conditions(
     presentations : pd.DataFrame,
-    condition_types : tuple[str, ...]
+    condition_types : tuple[str, ...] = CONDITION_TYPES
 ) -> tuple[xr.DataArray, dict[str, NDArray[int]]]:
     """Separate conditions in given presentations and return maps of conditions
 
@@ -327,7 +327,7 @@ def presentation_conditions(
     presentations : pd.DataFrame
         Stimulus presentations.
     condition_types : tuple[str, ...]
-        Condition types of interest.
+        Condition types of interest. Default is ('orientation', 'temporal_frequency', 'contrast').
 
     Returns
     -------

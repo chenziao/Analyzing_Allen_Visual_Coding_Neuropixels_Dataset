@@ -59,22 +59,37 @@ def as_quantity(unit : str | UnitQuantity) -> UnitQuantity:
 
 def as_string(unit : str | UnitQuantity) -> str:
     """Convert a unit to string format"""
-    return unit_to_str(as_quantity(unit), use_unicode=False)
+    try:
+        return unit_to_str(as_quantity(unit), use_unicode=False)
+    except:
+        return str(unit)
 
 
 def as_unicode(unit : str | UnitQuantity) -> str:
     """Convert the unit to unicode format"""
-    return unit_to_str(as_quantity(unit), use_unicode=True)
+    try:
+        return unit_to_str(as_quantity(unit), use_unicode=True)
+    except:
+        return str(unit)
 
 
 def as_latex(unit : str | UnitQuantity) -> str:
     """Convert the unit to latex format"""
-    return as_quantity(unit).dimensionality.latex
+    try:
+        return as_quantity(unit).dimensionality.latex
+    except:
+        return str(unit)
 
 
 def units_equal(unit1 : str | UnitQuantity, unit2 : str | UnitQuantity) -> bool:
     """Check if two units are equal."""
-    return as_quantity(unit1) == as_quantity(unit2)
+    try:
+        return as_quantity(unit1) == as_quantity(unit2)
+    except Exception as e:
+        if isinstance(unit1, str) and isinstance(unit2, str):
+            return unit1 == unit2
+        else:
+            raise e
 
 
 def conversion_factor(src_unit : str | UnitQuantity, dst_unit : str | UnitQuantity) -> float:

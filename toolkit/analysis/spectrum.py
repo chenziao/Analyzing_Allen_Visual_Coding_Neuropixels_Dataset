@@ -185,7 +185,7 @@ def get_fooof_freq_band(
     -------
     band : tuple[float, float]
         Combined frequency band of the top N peaks within the given band of interest.
-        If no peaks are found within the given band of interest, return None.
+        If no peaks are found within the given band of interest, return (np.nan, np.nan).
     peak_inds : array_like of bool
         Boolean array of the peaks within the given band of interest.
     """
@@ -194,7 +194,7 @@ def get_fooof_freq_band(
     peak_inds = peak_inds & (gaussian_params[:, 2] >= width_limit[0]) & (gaussian_params[:, 2] <= width_limit[1])
     band_peaks = gaussian_params[peak_inds, :]
     if band_peaks.size == 0:
-        return None, peak_inds
+        return (np.nan, np.nan), peak_inds
 
     top_n_peaks = max(top_n_peaks, 1)  # at least one peak
     band_peaks = band_peaks[np.argsort(band_peaks[:, 1])[::-1][:top_n_peaks]]
