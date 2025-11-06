@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pathlib import Path
+import re
 import json
 import numpy as np
 import pandas as pd
@@ -59,6 +60,8 @@ def get_existing_sessions(
     return session_list, missing_sessions
 
 
+# Processed data directory
+
 class SessionDirectory:
     def __init__(
         self,
@@ -102,6 +105,7 @@ class SessionDirectory:
         self._probe_id = None
         self._has_lfp_data = None
 
+    # Attributes
     @property
     def session_dir(self) -> Path:
         if not self.exist:
@@ -126,7 +130,7 @@ class SessionDirectory:
             self._session : EcephysSession = self.cache.get_session_data(self.session_id)
         return self._session
 
-
+    # Probe info
     @property
     def probe_info(self) -> Path:
         return self.session_dir / 'probe_info.json'
@@ -187,7 +191,7 @@ class SessionDirectory:
         self._has_lfp_data = bool(probe_info.get('has_lfp_data', self._probe_id is not None))
         return probe_info
 
-
+    # LFP channels
     @property
     def lfp_channels(self) -> Path:
         return self.session_dir / 'lfp_channels.csv'
@@ -198,7 +202,7 @@ class SessionDirectory:
     def load_lfp_channels(self) -> pd.DataFrame:
         return pd.read_csv(self.lfp_channels, index_col='id')
 
-
+    # CSD
     @property
     def csd(self) -> Path:
         return self.session_dir / 'csd.nc'
@@ -216,7 +220,7 @@ class SessionDirectory:
         """
         return xr.load_dataarray(self.csd)
 
-
+    # LFP
     def get_lfp(self, probe_id : int | None = None) -> xr.DataArray:
         """Get LFP array from allensdk session cache and cache in memory.
 
@@ -305,7 +309,7 @@ class SessionDirectory:
         channels = probe_channels.loc[lfp_channels].sort_values('probe_vertical_position')
         return channels
 
-
+    # PSD
     @property
     def psd(self) -> Path:
         return self.session_dir / 'psd_channel_groups.nc'
@@ -337,7 +341,7 @@ class SessionDirectory:
         """
         return xr.load_dataset(self.psd)
 
-
+    # Conditions PSD
     def conditions_psd(self, stimulus_name : str) -> Path:
         return self.session_dir / f'{stimulus_name}_conditions_psd.nc'
 
@@ -364,6 +368,114 @@ class SessionDirectory:
         """
         cond_psd_files = list(self.session_dir.glob("*_conditions_psd.nc"))
         stimulus_names = [f.stem.removesuffix('_conditions_psd') for f in cond_psd_files]
-        cond_psd_das = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, cond_psd_files)}
+        cond_psd_das = {stim: xr.load_dataarray(f) for stim, f in zip(stimulus_names, cond_psd_files)}
         return cond_psd_das
+
+    # Wave bands
+    @property
+    def wave_bands(self) -> Path:
+        return self.session_dir / 'wave_bands.nc'
+
+    def save_wave_bands(self, wave_bands : xr.Dataset) -> None:
+        """Save detected frequency bands from FOOOF analysis.
+        
+        Parameters
+        ----------
+        bands : xr.Dataset
+            Dataset containing:
+            - bands : xr.DataArray
+                Detected frequency bands from FOOOF analysis.
+                Dimensions: stimulus, layer, wave_band, bound
+            - wave_band_limit : xr.DataArray
+                Wave band limit.
+                Dimensions: wave_band
+            - wave_band_width_limit : xr.DataArray
+                Wave band width limit.
+                Dimensions: wave_band
+        """
+        wave_bands.to_netcdf(self.wave_bands)
+
+    def load_bands(self) -> xr.Dataset:
+        """Load detected frequency bands from FOOOF analysis."""
+        return xr.load_dataset(self.wave_bands)
+
+    # Band power in conditions
+    def condition_band_power(self, stimulus_name : str, wave_band : str = 'beta') -> Path:
+        return self.session_dir / f'{stimulus_name}_condition_{wave_band}_power.nc'
+
+    def save_condition_band_power(
+        self, cond_band_power_das : dict[str, xr.DataArray],
+        wave_band : str = 'beta'
+    ) -> None:
+        """Save band power in drifting grating conditions into separate data files.
+
+        Parameters
+        ----------
+        condition_band_power_das : dict[str, xr.DataArray]
+            Dictionary of {stimulus_name: condition band power dataarray}.
+            Dimensions: layer, *condition_types (e.g. orientation, temporal_frequency, contrast)
+        wave_band : str
+            Wave band of which the power is calculated.
+        """
+        for stim, cond_band_power in cond_band_power_das.items():
+            cond_band_power.to_netcdf(self.condition_band_power(stim, wave_band))
+
+    def load_condition_band_power(self, wave_band : str = 'beta') -> dict[str, xr.DataArray]:
+        """Load band power in drifting grating conditions from separate data files.
+        
+        Parameters
+        ----------
+        wave_band : str
+            Wave band of which the power is calculated.
+
+        Returns
+        -------
+        dict[str, xr.DataArray]
+            Dictionary of {stimulus_name: condition band power dataarray}.
+            Dimensions: layer, *condition_types (e.g. orientation, temporal_frequency, contrast)
+        """
+        from ..allen_helpers.stimuli import STIMULUS_CATEGORIES
+        session_type = self.session.session_type
+        drifting_gratings_stimuli = STIMULUS_CATEGORIES[session_type]['drifting_gratings']
+        cond_band_power_das = {}
+        for stim in drifting_gratings_stimuli:
+            cond_band_power_file = self.condition_band_power(stim, wave_band)
+            if cond_band_power_file.exists():
+                cond_band_power_das[stim] = xr.load_dataarray(cond_band_power_file)
+        return cond_band_power_das
+
+
+# Output directory
+
+def format_for_path(path : str) -> str:
+    """Format a string to be valid for a path"""
+    return re.sub(r'[\\/:*?"<>|]', '_', path)
+
+
+def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.DataFrame:
+    """Get the session selection dataframe from the output directory.
+    
+    Parameters
+    ----------
+    structure_acronym : str
+        The structure acronym to get the session selection from.
+
+    Returns
+    -------
+    pd.DataFrame
+        Session selection dataframe. Create one if not exists.
+    """
+    file = RESULTS_DIR / "session_selection.csv"
+
+    if file.exists():
+        sessions_df = pd.read_csv(file, index_col='session_id')
+    else:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        sessions_df = initialize_session_selection(structure_acronym)
+        sessions_df.to_csv(file)
+    return sessions_df
+
+
+def initialize_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.DataFrame:
+    raise NotImplementedError("Session selection not initialized")
 

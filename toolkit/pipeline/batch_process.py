@@ -65,9 +65,9 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
 
         case SessionSet.SELECTED:
             # Get selected sessions from the session selection file
-            import pandas as pd
-            file = paths.OUTPUT_BASE_DIR / "session_selection.csv"
-            sessions = pd.read_csv(file)['session_id'].to_list()
+            from .data_io import get_session_selection
+            sessions_df = get_session_selection()
+            sessions = sessions_df.index[sessions_df['selected']].to_list()
 
         case SessionSet.OPTOTAG:
             raise NotImplementedError("Optotag sessions are not implemented yet")

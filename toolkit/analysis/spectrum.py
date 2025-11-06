@@ -10,7 +10,7 @@ import pywt
 from fooof import FOOOF
 from fooof.sim.gen import gen_aperiodic
 
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from fooof.data import FOOOFResults
@@ -160,7 +160,7 @@ def fit_fooof(
 
 
 def get_fooof_freq_band(
-    fooof_result : FOOOFResults,
+    gaussian_params : NDArray[float],
     freq_range : tuple[float, float],
     width_limit : tuple[float, float] = (0., np.inf),
     top_n_peaks : int = 1,
@@ -170,8 +170,8 @@ def get_fooof_freq_band(
     
     Parameters
     ----------
-    fooof_result : FOOOFResults
-        FOOOF results.
+    gaussian_params : NDArray[float]
+        Gaussian parameters from FOOOF results, FOOOFResults.gaussian_params.
     freq_range : tuple[float, float]
         Frequency band of interest
     width_limit : tuple[float, float]
@@ -189,15 +189,20 @@ def get_fooof_freq_band(
     peak_inds : array_like of bool
         Boolean array of the peaks within the given band of interest.
     """
-    gaussian_params = fooof_result.gaussian_params
+    # find peaks within the given band of interest
     peak_inds = (gaussian_params[:, 0] >= freq_range[0]) & (gaussian_params[:, 0] <= freq_range[1])
     peak_inds = peak_inds & (gaussian_params[:, 2] >= width_limit[0]) & (gaussian_params[:, 2] <= width_limit[1])
-    band_peaks = gaussian_params[peak_inds, :]
-    if band_peaks.size == 0:
+    peak_inds = np.nonzero(peak_inds)[0]
+    if peak_inds.size == 0:
         return (np.nan, np.nan), peak_inds
 
+    # find top peaks by height
     top_n_peaks = max(top_n_peaks, 1)  # at least one peak
-    band_peaks = band_peaks[np.argsort(band_peaks[:, 1])[::-1][:top_n_peaks]]
+    idx = np.argsort(gaussian_params[peak_inds, 1])[::-1][:top_n_peaks]
+    peak_inds = peak_inds[idx]
+
+    # get the combined frequency band of the top peaks
+    band_peaks = gaussian_params[peak_inds, :]
     band_widths = bandwidth_n_sigma * band_peaks[:, 2]  # one-sided bandwidth
     band_freqs = np.fmax(band_peaks[:, [0]] + np.outer(band_widths, [-1, 1]), 0.)
     band = (band_freqs[:, 0].min(), band_freqs[:, 1].max())  # combined frequency band

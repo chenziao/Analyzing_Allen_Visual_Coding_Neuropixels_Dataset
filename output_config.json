@@ -1,9 +1,8 @@
 {
     "display_unit": "unicode",
-    "save_figure": false,
+    "save_figure": true,
     "figure_format": [
-        "png",
-        "pdf"
+        "png"
     ],
     "savefig_kwargs": {
         "transparent": true,

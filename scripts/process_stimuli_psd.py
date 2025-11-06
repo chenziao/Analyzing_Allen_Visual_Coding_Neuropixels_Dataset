@@ -32,8 +32,10 @@ def process_stimuli_psd(
     psd_tseg: float = 0.5,
     df: float = 1.0,
 ):
+    import numpy as np
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
+    import toolkit.pipeline.location as pl
     from toolkit.pipeline.data_io import SessionDirectory
 
     #################### Get session and probe ####################
@@ -46,18 +48,16 @@ def process_stimuli_psd(
 
     session = session_dir.session
 
-    lfp_groups, channel_groups = ps.get_lfp_channel_groups(session_dir,
-        probe_info['central_channels'], probe_id=probe_info['probe_id'], width=group_width)
-
-
-    #################### Analyze data ####################
     stimulus_presentations = session.stimulus_presentations
     session_type = session.session_type
 
     stimulus_names = st.STIMULUS_NAMES[session_type]
     drifting_gratings_stimuli = st.STIMULUS_CATEGORIES[session_type]['drifting_gratings']
 
-    # Process PSD
+    lfp_groups, channel_groups = ps.get_lfp_channel_groups(session_dir,
+        probe_info['central_channels'], probe_id=probe_info['probe_id'], width=group_width)
+
+    #################### Analyze data ####################
     psd_das = {}
     cond_psd_das = {}
 
@@ -89,4 +89,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     process_sessions(process_stimuli_psd, **args)
-

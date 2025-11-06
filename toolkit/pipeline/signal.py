@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy.signal as ss
-import warnings
 
 from ..analysis.signal import bandpass_filter
 from ..utils.quantity_units import as_quantity, as_string
@@ -17,57 +16,13 @@ if TYPE_CHECKING:
     from ..allen_helpers.stimuli import StimulusBlock
 
 
-def get_layer_channel_groups(
-    channel_ids : pd.Index,
-    central_channels : dict,
-    width : int = 0
-) -> xr.DataArray:
-    """Get groups of channels around central channel of each layer
-    
-    Parameters
-    ----------
-    channel_ids : ArrayLike
-        IDs of channels ordered by position.
-    central_channels : dict
-        Layer structure acronym: ID of central channels in the layer.
-    width : int
-        Number of channels to the left and right of the central channel.
-        Total number of channels in the group is 2 * width + 1.
-
-    Returns
-    -------
-    xr.DataArray
-        DataArray with channel ids for each layer.
-        Dimension: layer, channel_index_offset (index offset from central channel).
-    """
-    channel_groups = []
-    for channel in central_channels.values():
-        try:
-            channel_ids = pd.Index(channel_ids)
-            central_idx = channel_ids.get_loc(channel)
-        except KeyError:
-            warnings.warn(f"Channel '{channel}' not found in channel ids")
-            continue
-        channels_idx = slice(max(central_idx - width, 0), central_idx + width + 1)
-        channel_groups.append(list(channel_ids[channels_idx]))
-
-    channel_groups = xr.DataArray(
-        np.array(channel_groups),
-        dims=('layer', 'channel_index_offset'),
-        coords=dict(
-            layer=list(central_channels),
-            channel_index_offset=np.arange(-width, width + 1))
-    )
-    return channel_groups
-
-
 def get_lfp_channel_groups(
     session_dir : SessionDirectory,
     central_channels : dict,
     probe_id : int | None = None,
     width : int = 0,
     sort_by : str = 'probe_vertical_position',
-    sort_ascending : bool = False,
+    descending : bool = True,
     **load_lfp_kwargs
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """Get groups of channels around central channel of each layer
@@ -86,8 +41,9 @@ def get_lfp_channel_groups(
         Total number of channels in the group is 2 * width + 1.
     sort_by : str
         Column name in `session.channels` to sort the central channels by.
-    sort_ascending : bool
-        Whether to sort the central channels in ascending or descending order.
+        Default is to sort by vertical position in descending order (superficial to deep).
+    descending : bool
+        Whether to sort the channels in descending order.
     **load_lfp_kwargs
         Additional arguments to pass to session_dir.load_lfp.
 
@@ -105,14 +61,12 @@ def get_lfp_channel_groups(
         else:
             raise ValueError("No probe ID found for any of the central channels")
 
+    from .location import argsort_channels, get_layer_channel_groups
+
     # Get channel groups with layer order sorted by `sort_by` of central channels
     probe_channels = session_dir.probe_lfp_channels(probe_id)
-    central_channels_sortby_values = probe_channels.loc[central_channels.values(), sort_by]
-    if any(central_channels_sortby_values.isna()):
-        raise ValueError("Central channels have missing values in `sort_by` column")
-    idx = central_channels_sortby_values.argsort()
-    if not sort_ascending:
-        idx = idx[::-1]
+    idx = argsort_channels(central_channels.values(),
+        channels_df=probe_channels, sort_by=sort_by, descending=descending)
     channel_groups = get_layer_channel_groups(
         probe_channels.index, central_channels, width=width).isel(layer=idx)
 
