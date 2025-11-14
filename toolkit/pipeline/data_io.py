@@ -493,7 +493,7 @@ def initialize_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) ->
     for session_id in sessions.index:
         has_structure.append(structure_acronym in sessions.loc[session_id, 'ecephys_structure_acronyms'])
         session_dir = SessionDirectory(session_id, structure_acronym)
-        has_lfp_data.append(session_dir.has_lfp_data)
+        has_lfp_data.append(session_dir.has_lfp_data if session_dir.exist else None)
 
     sessions_df['has_structure'] = has_structure
     sessions_df['has_lfp_data'] = has_lfp_data
