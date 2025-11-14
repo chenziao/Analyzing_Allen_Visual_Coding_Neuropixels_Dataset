@@ -32,11 +32,10 @@ def process_stimuli_psd(
     psd_tseg: float = 0.5,
     df: float = 1.0,
 ):
-    import numpy as np
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
-    import toolkit.pipeline.location as pl
     from toolkit.pipeline.data_io import SessionDirectory
+    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
 
     #################### Get session and probe ####################
     session_dir = SessionDirectory(session_id, cache_lfp=True)
@@ -53,6 +52,7 @@ def process_stimuli_psd(
 
     stimulus_names = st.STIMULUS_NAMES[session_type]
     drifting_gratings_stimuli = st.STIMULUS_CATEGORIES[session_type]['drifting_gratings']
+    drifting_gratings_windows = GLOBAL_SETTINGS['drifting_gratings_windows']
 
     lfp_groups, channel_groups = ps.get_lfp_channel_groups(session_dir,
         probe_info['central_channels'], probe_id=probe_info['probe_id'], width=group_width)
@@ -68,10 +68,17 @@ def process_stimuli_psd(
         psd_avg = psd_trials.mean(dim='presentation_id', keep_attrs=True)
         psd_das[stim] = psd_avg
 
-        if stim in drifting_gratings_stimuli:  # has conditions
+        if stim in drifting_gratings_stimuli:
+            # psd in drifting gratings conditions
             conditions = st.presentation_conditions(stim_trials.presentations, condition_types=st.CONDITION_TYPES)
             cond_psd = st.average_across_conditions(psd_trials, *conditions)
             cond_psd_das[stim] = cond_psd
+
+            # psd in drifting gratings time windows
+            for window_name, window_range in drifting_gratings_windows.items():
+                aligned_lfp = st.align_trials(lfp_groups, stim_trials, window=window_range)
+                psd_trials = ps.trial_psd(aligned_lfp, tseg=psd_tseg, df=df)
+                psd_das[f'{stim}_{window_name}'] = psd_trials.mean(dim='presentation_id', keep_attrs=True)
 
 
     #################### Save data ####################

@@ -171,7 +171,7 @@ def get_fooof_freq_band(
     Parameters
     ----------
     gaussian_params : NDArray[float]
-        Gaussian parameters from FOOOF results, FOOOFResults.gaussian_params.
+        Gaussian parameters from FOOOF results, FOOOFResults.gaussian_params (center frequency, power of peak, bandwidth).
     freq_range : tuple[float, float]
         Frequency band of interest
     width_limit : tuple[float, float]

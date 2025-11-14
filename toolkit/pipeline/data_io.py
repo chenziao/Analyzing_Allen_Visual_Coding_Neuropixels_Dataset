@@ -97,7 +97,6 @@ class SessionDirectory:
         """
         self.session_id = session_id
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
-        self.exist = self._session_dir.exists()
         self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
         self._session : EcephysSession | None = None
         self._cache_lfp = cache_lfp
@@ -106,6 +105,10 @@ class SessionDirectory:
         self._has_lfp_data = None
 
     # Attributes
+    @property
+    def exist(self) -> bool:
+        return self._session_dir.exists()
+
     @property
     def session_dir(self) -> Path:
         if not self.exist:
@@ -120,8 +123,11 @@ class SessionDirectory:
 
     @property
     def has_lfp_data(self) -> bool:
-        if self._has_lfp_data is None:
-            self.load_probe_info()
+        if self._has_lfp_data is None and self.exist:
+            try:
+                self.load_probe_info()  # determine if has LFP data
+            except FileNotFoundError:
+                pass  # remains unknown
         return self._has_lfp_data
 
     @property
@@ -468,7 +474,7 @@ def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.Dat
     file = RESULTS_DIR / "session_selection.csv"
 
     if file.exists():
-        sessions_df = pd.read_csv(file, index_col='session_id')
+        sessions_df = pd.read_csv(file, index_col='id')
     else:
         file.parent.mkdir(parents=True, exist_ok=True)
         sessions_df = initialize_session_selection(structure_acronym)
@@ -477,5 +483,19 @@ def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.Dat
 
 
 def initialize_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.DataFrame:
-    raise NotImplementedError("Session selection not initialized")
+    cache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
+    sessions = cache.get_session_table()
 
+    sessions_df = sessions[['session_type', 'full_genotype', 'unit_count']].copy()
+    has_structure = []
+    has_lfp_data = []
+
+    for session_id in sessions.index:
+        has_structure.append(structure_acronym in sessions.loc[session_id, 'ecephys_structure_acronyms'])
+        session_dir = SessionDirectory(session_id, structure_acronym)
+        has_lfp_data.append(session_dir.has_lfp_data)
+
+    sessions_df['has_structure'] = has_structure
+    sessions_df['has_lfp_data'] = has_lfp_data
+    sessions_df['selected'] = sessions_df['has_structure'] & sessions_df['has_lfp_data']
+    return sessions_df

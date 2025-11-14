@@ -103,7 +103,6 @@ def analyze_psd_fooof(
     session = session_dir.session
     session_type = session.session_type
 
-    stimulus_names = st.STIMULUS_NAMES[session_type]
     drifting_gratings_stimuli = st.STIMULUS_CATEGORIES[session_type]['drifting_gratings']
 
     central_channels = probe_info['central_channels']
@@ -113,6 +112,9 @@ def analyze_psd_fooof(
     #################### Load data and parameters ####################
     psd_das = session_dir.load_psd()
     cond_psd_das = session_dir.load_conditions_psd()
+
+    stimulus_names = list(psd_das)
+    stimulus_names.remove('channel_groups')
 
     fooof_params = dict(
         freq_range=freq_range,
@@ -136,6 +138,7 @@ def analyze_psd_fooof(
     fooof_objs = {}
     bands = np.full((len(stimulus_names), layers.size, wave_band_limit.wave_band.size, 2), np.nan)
     peaks = np.full(bands.shape[:-1] + (freq_band_kwargs['top_n_peaks'], ), np.nan)
+    center_freq = peaks.copy()
 
     for i, stim in enumerate(stimulus_names):
         psd_avg = psd_das[stim]
@@ -158,13 +161,15 @@ def analyze_psd_fooof(
 
                 bands[i, j, k] = band
                 peaks[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 1]
+                center_freq[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 0]
 
     coords = dict(stimulus=stimulus_names, layer=layers, wave_band=wave_band_limit.coords['wave_band'])
     bands = xr.DataArray(data=bands, coords=coords | dict(bound=wave_band_limit.coords['bound']))
     peaks = xr.DataArray(data=peaks, coords=coords | dict(peak_rank=range(peaks.shape[-1])))
+    center_freq = peaks.copy(data=center_freq)
 
     bands_ds = xr.Dataset(dict(
-        bands=bands, peaks=peaks,
+        bands=bands, peaks=peaks, center_freq=center_freq,
         wave_band_limit=wave_band_limit,
         wave_band_width_limit=wave_band_width_limit
     ))
