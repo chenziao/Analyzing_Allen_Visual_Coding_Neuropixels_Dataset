@@ -426,13 +426,15 @@ class SessionDirectory:
         for stim, cond_band_power in cond_band_power_das.items():
             cond_band_power.to_netcdf(self.condition_band_power(stim, wave_band))
 
-    def load_condition_band_power(self, wave_band : str = 'beta') -> dict[str, xr.DataArray]:
+    def load_condition_band_power(self, wave_band : str = 'beta', session_type : str | None = None) -> dict[str, xr.DataArray]:
         """Load band power in drifting grating conditions from separate data files.
         
         Parameters
         ----------
         wave_band : str
             Wave band of which the power is calculated.
+        session_type : str | None
+            Session type. If None, use the session type from the session cache.
 
         Returns
         -------
@@ -441,7 +443,8 @@ class SessionDirectory:
             Dimensions: layer, *condition_types (e.g. orientation, temporal_frequency, contrast)
         """
         from ..allen_helpers.stimuli import STIMULUS_CATEGORIES
-        session_type = self.session.session_type
+        if session_type is None:
+            session_type = self.session.session_type
         drifting_gratings_stimuli = STIMULUS_CATEGORIES[session_type]['drifting_gratings']
         cond_band_power_das = {}
         for stim in drifting_gratings_stimuli:

@@ -179,6 +179,7 @@ def plot_channel_psd(
     """
     freq_range = _get_psd_freq_range(freq_range, frequencies=psd_da.frequency, log_frequency=log_frequency)
     psd_plt_da = psd_da.sel(frequency=slice(*freq_range))
+    psd_plt_da = psd_plt_da.transpose('frequency', channel_dim)
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
@@ -195,7 +196,7 @@ def plot_channel_psd(
     else:
         unit = UNIT[psd_da.attrs.get('unit', '')]
 
-    ax.plot(psd_plt_da.frequency, psd_plt_da.values.T, label=channels)
+    ax.plot(psd_plt_da.frequency, psd_plt_da.values, label=channels)
 
     if power_scale.lower() == 'log':
         ax.set_yscale('log')

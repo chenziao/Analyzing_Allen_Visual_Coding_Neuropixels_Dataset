@@ -9,6 +9,7 @@ import scipy.signal as ss
 from ..analysis.signal import bandpass_filter
 from ..utils.quantity_units import as_quantity, as_string
 
+from typing import Sequence
 from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
@@ -202,3 +203,57 @@ def bandpass_filter_blocks(
         filtered_blocks = xr.concat(filtered_blocks, dim=time_dim, combine_attrs='override')
         filtered_blocks.attrs['extend_time'] = extend_time
     return filtered_blocks
+
+
+def average_psd_across_sessions(
+    psd_ds: Sequence[xr.Dataset] | Sequence[xr.DataArray],
+    fs: float | None = None,
+    nfft: int | None = None
+) -> tuple[xr.Dataset, xr.Dataset] | tuple[xr.DataArray, xr.DataArray]:
+    """Average PSD data arrays or datasets in decibels across sessions.
+    
+    Parameters
+    ----------
+    psd_ds: Sequence[xr.Dataset] | Sequence[xr.DataArray]
+        PSD datasets or data arrays to average across sessions. Must have same dimensions.
+    fs: float | None
+        Common sampling frequency. If None, use the median sampling frequency of the sessions.
+    nfft: int | None
+        Common number of FFT points. If None, use the median number of FFT points of the sessions.
+
+    Returns
+    -------
+    tuple[xr.Dataset, xr.Dataset] | tuple[xr.DataArray, xr.DataArray]:
+        Average PSD across sessions, concatenated PSD datasets or data arrays.
+
+    Note: Missing values are skipped when averaging.
+    """
+    # get sessions with stimulus
+    psd_ds = list(psd_ds)
+    n_seesions = len(psd_ds)
+    if not n_seesions:
+        raise ValueError("No PSD sessions provided")
+
+    # get common frequency array and attributes
+    attrs = dict(psd_ds[0].attrs)
+    attrs.pop('session_id', None)
+    if fs is None:
+        fs = np.median([ds.attrs['fs'] for ds in psd_ds])
+    if nfft is None:
+        nfft = np.median([ds.attrs['nfft'] for ds in psd_ds])
+    frequency = np.fft.rfftfreq(nfft, d=1/fs)
+    attrs.update(fs=fs, nfft=nfft)
+
+    # gether and concatenate psd of stimulus for each session
+    session_ids = [ds.attrs['session_id'] for ds in psd_ds]
+    if isinstance(psd_ds[0], xr.Dataset):  # drop data variable `channel_groups` (not PSD data)
+        psd_ds = [ds.drop_vars('channel_groups') for ds in psd_ds]
+    psd_ds = [ds.assign_coords({'frequency': frequency}) for ds in psd_ds]  # use common frequency
+    psd_ds = xr.concat(psd_ds, dim=pd.Index(session_ids, name='session_id'), combine_attrs='drop_conflicts')
+    psd_ds = psd_ds.assign_attrs(attrs)
+
+    # average across sessions in decibels
+    psd_avg = (10 * np.log10(psd_ds)).mean(dim='session_id', skipna=True)
+    psd_avg = 10 ** (psd_avg / 10) # convert back to linear scale
+    psd_avg = psd_avg.assign_attrs(attrs, n_sessions=n_seesions)
+    return psd_avg, psd_ds

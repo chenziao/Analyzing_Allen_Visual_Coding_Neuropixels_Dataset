@@ -40,6 +40,12 @@ STIMULUS_CATEGORIES = {
     }
 }
 
+STIMULUS_SESSION_TYPES = {}
+for session_type, category in STIMULUS_CATEGORIES.items():
+    for c in category.values():
+        for stim in c:
+            STIMULUS_SESSION_TYPES[stim] = session_type
+
 
 # Drifting gratings conditions
 CONDITION_TYPES = ('orientation', 'temporal_frequency', 'contrast')
