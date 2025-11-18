@@ -316,6 +316,69 @@ def fit_fooof_and_get_bands(
     return fooof_objs, bands_ds
 
 
+def layer_condition_band_power(
+    cond_psd_da : xr.DataArray,
+    bands_da : xr.DataArray,
+    wave_band_limit : xr.DataArray,
+    fixed_condition_types : Sequence[str],
+    condition_wave_band : str = 'beta'
+) -> tuple[xr.DataArray, xr.Dataset]:
+    """Get band power in drifting grating conditions for each layer.
+    
+    Parameters
+    ----------
+    cond_psd_da : xr.DataArray
+        PSD data array. Dimensions: layer, frequency, *condition_types.
+    bands_da : xr.DataArray
+        Bands data array. Dimensions: layer, wave_band, bound.
+    wave_band_limit : xr.DataArray
+        Wave band limit.
+    fixed_condition_types : Sequence[str]
+        Fixed condition types.
+    condition_wave_band : str
+        Wave band of which the power is calculated.
+
+    Returns
+    -------
+    cond_band_power : xr.DataArray
+        Band power in drifting grating conditions for each layer.
+        Dimensions: layer, *condition_types.
+    layer_bands_ds : xr.Dataset
+        Dataset of frequency bands detected by FOOOF for each layer.
+        Data variables:
+            bands : frequency band in Hz. Default to `wave_band_limit` if not detected by FOOOF.
+            detected : whether the frequency band is detected by FOOOF.
+    """
+    cond_band_power = {}
+    layer_bands = []
+    layer_detected = []
+    layers = bands_da.coords['layer'].values
+    for layer in layers:
+        band = bands_da.sel(layer=layer, wave_band=condition_wave_band)
+        detected = not np.isnan(band).any()
+        if not detected:  # use frequency range of interest if band is not detected by fooof
+            band = wave_band_limit.sel(wave_band=condition_wave_band)
+        layer_detected.append(detected)
+        layer_bands.append(band.values)
+
+        cond_psd = cond_psd_da.sel(layer=layer)
+        power = cond_psd.sel(frequency=slice(*band)).integrate('frequency').mean(dim=fixed_condition_types)
+        unit = as_string(as_quantity(cond_psd.attrs['unit']) * as_quantity('Hz'))
+        cond_band_power[layer] = power
+
+    cond_band_power = xr.concat(cond_band_power.values(),
+        dim=pd.Index(cond_band_power, name='layer'), combine_attrs='override')
+    cond_band_power.attrs.update(cond_psd_da.attrs | dict(unit=unit, wave_band=condition_wave_band))
+    layer_bands_ds = xr.Dataset(
+        data_vars=dict(
+            bands=(('layer', 'bound'), layer_bands),
+            detected=('layer', layer_detected)
+        ),
+        coords=dict(layer=layers, bound=bands_da.coords['bound'])
+    ).assign_attrs(wave_band=condition_wave_band)
+    return cond_band_power, layer_bands_ds
+
+
 def average_psd_across_sessions(
     psd_ds: Sequence[xr.Dataset] | Sequence[xr.DataArray],
     fs: float | None = None,

@@ -8,6 +8,7 @@ Analyze PSD using FOOOF.
 """
 
 import add_path
+from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
 
 PARAMETERS = dict(
     freq_range = dict(
@@ -56,7 +57,7 @@ PARAMETERS = dict(
         help = "Multiplier of sigma of the Gaussian parameters to define the bandwidth of the peak."
     ),
     condition_wave_band = dict(
-        default = 'beta',
+        default = GLOBAL_SETTINGS['condition_wave_band'],
         type = str,
         help = "Wave band to analyze in drifting grating conditions."
     )
@@ -74,7 +75,7 @@ def analyze_psd_fooof(
     plt_range: float,
     top_n_peaks: int = 2,
     bandwidth_n_sigma: float = 1.5,
-    condition_wave_band: str = 'beta'
+    condition_wave_band: str = GLOBAL_SETTINGS['condition_wave_band']
 ):
     import numpy as np
     import pandas as pd
@@ -86,7 +87,6 @@ def analyze_psd_fooof(
     import toolkit.pipeline.signal as ps
     import toolkit.plots.format as plt_fmt
     from toolkit.pipeline.data_io import SessionDirectory, format_for_path
-    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
     from toolkit.utils.quantity_units import as_string, as_quantity
     from toolkit.paths.paths import FIGURE_DIR
 
@@ -133,31 +133,22 @@ def analyze_psd_fooof(
     fixed_condition_types = st.FIXED_CONDITION_TYPES[session_type]
 
     cond_band_power_das = {}
+    layer_bands_ds = {}
     for stim in drifting_gratings_stimuli:
-        cond_band_power = {}
-        for layer in bands_ds.coords['layer'].values:
-            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band)
-            detected = not np.isnan(band).any()
-            if not detected:  # use frequency range of interest if band is not detected by fooof
-                band = wave_band_limit.sel(wave_band=condition_wave_band)
+        cond_band_power_das[stim], layer_bands_ds[stim] = ps.layer_condition_band_power(
+            cond_psd_das[stim].sel(stimulus=stim), bands_ds.bands.sel(stimulus=stim),
+            wave_band_limit, fixed_condition_types, condition_wave_band=condition_wave_band
+        )
 
-            cond_psd = cond_psd_das[stim].sel(stimulus=stim, layer=layer)
-            power = cond_psd.sel(frequency=slice(*band)).integrate('frequency').mean(dim=fixed_condition_types)
-            unit = as_string(as_quantity(cond_psd.attrs['unit']) * as_quantity('Hz'))
-            power.attrs.update(cond_psd.attrs | dict(unit=unit, detected=detected))
-            cond_band_power[layer] = power
-
-        cond_band_power_das[stim] = xr.concat(cond_band_power.values(),
-            dim=pd.Index(cond_band_power, name='layer'), combine_attrs='override')
 
     # Drifting grating PSD with filtered conditions
-    condition_filters = GLOBAL_SETTINGS['condition_filters']
     layer_of_interest = GLOBAL_SETTINGS['layer_of_interest']
     drifting_gratings_windows = GLOBAL_SETTINGS['drifting_gratings_windows']
 
-    # filter drifting gratings conditions and find orientation with max power
+    # filter drifting gratings conditions
     cond_band_power = cond_band_power_das[drifting_gratings_stimuli[0]]  # first drifting grating stimulus as primary
-    cond_band_power = ps.filter_conditions(cond_band_power)
+    cond_band_power = ps.filter_conditions(cond_band_power)  # default filters defined in GLOBAL_SETTINGS['condition_filters']
+    # find preferred orientation with max power
     average_dims = tuple(d for d in cond_band_power.dims if d in st.CONDITION_TYPES and d != 'orientation')
     preferred_orientations = cond_band_power.mean(dim=average_dims).idxmax(dim='orientation')
 
@@ -189,10 +180,10 @@ def analyze_psd_fooof(
 
     #################### Save data ####################
     # Save band power in drifting grating conditions
-    session_dir.save_condition_band_power(cond_band_power_das)
+    session_dir.save_condition_band_power(cond_band_power_das, wave_band=condition_wave_band)
 
     # Save preferred orientations
-    session_dir.save_preferred_orientations(preferred_orientations)
+    session_dir.save_preferred_orientations(preferred_orientations, wave_band=condition_wave_band)
 
     # Save updated PSD of stimuli
     session_dir.save_psd(psd_ds, channel_groups)
@@ -240,38 +231,11 @@ def analyze_psd_fooof(
 
     # Plot band power in drifting grating conditions
     x_cond, y_cond = st.VARIED_CONDITION_TYPES[session_type]
-    cond_label = st.COND_LABEL
-
     for stim, cond_band_power in cond_band_power_das.items():
         stim_cond_band_power_dir = cond_band_power_dir / stim
         stim_cond_band_power_dir.mkdir(parents=True, exist_ok=True)
 
-        cond_power_db = 10 * np.log10(cond_band_power)
-        vmin, vmax = cond_power_db.min(), cond_power_db.max()
-        layers_ = cond_power_db.layer.values
-
-        fig, axs = plt.subplots(layers_.size, 1, squeeze=False, figsize=(4.8, 3.0 * layers_.size))
-        for layer, ax in zip(layers_, axs.ravel()):
-            cpower = cond_power_db.sel(layer=layer).transpose(y_cond, x_cond)
-            label = condition_wave_band.title() + ' power (dB)'
-            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band).values
-
-            x = cpower.coords[x_cond].values
-            y = cpower.coords[y_cond].values
-            cpower = cpower.assign_coords({x_cond: range(x.size), y_cond: range(y.size)})
-
-            im = ax.imshow(cpower, origin='lower', vmin=vmin, vmax=vmax)
-            cbar = plt.colorbar(im, ax=ax, label=label, pad=0.03)
-            ax.set_xticks(cpower.coords[x_cond], labels=map('{:g}'.format, x))
-            ax.set_yticks(cpower.coords[y_cond], labels=map('{:g}'.format, y))
-            ax.set_xlabel(cond_label[x_cond])
-            ax.set_ylabel(cond_label[y_cond])
-            title = f'Layer {layer}, {band[0]:.1f} - {band[1]:.1f} Hz'
-            if not cond_band_power.attrs['detected']:
-                title += ' (undetected)'
-            ax.set_title(title)
-        fig.tight_layout()
-
+        fig, axs = plots.plot_layer_condition_band_power(cond_band_power, layer_bands_ds[stim], x_cond, y_cond)
         plt_fmt.save_figure(stim_cond_band_power_dir, fig, name=session_str)
 
     plt.close('all')

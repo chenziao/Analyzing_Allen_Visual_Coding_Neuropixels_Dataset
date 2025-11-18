@@ -16,6 +16,7 @@
         "early": [0.0, 0.33],
         "stable": [0.33, 2.0]
     },
+    "condition_wave_band": "beta",
     "condition_filters": {
         "temporal_frequency": "lambda x: x < 5",
         "contrast": "lambda x: x > 0.5"

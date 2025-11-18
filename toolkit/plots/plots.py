@@ -382,3 +382,62 @@ def plot_freq_band(
         ax.legend()  # Update legend for the shaded regions
     return ax
 
+
+def plot_layer_condition_band_power(
+    cond_band_power : xr.DataArray,
+    layer_bands_ds : xr.Dataset,
+    x_cond : str,
+    y_cond : str,
+    figsize : tuple[float, float] = (4.8, 3.0)
+) -> tuple[Figure, np.ndarray]:
+    """Plot heatmap of band power in conditions for each layer.
+    
+    Parameters
+    ----------
+    cond_band_power : xr.DataArray
+        Band power in drifting grating conditions for each layer.
+        Dimensions: layer, *condition_types.
+    layer_bands_ds : xr.Dataset
+        Dataset of frequency bands detected by FOOOF for each layer.
+        Data variables:
+            bands : frequency band in Hz. Default to `wave_band_limit` if not detected by FOOOF.
+            detected : whether the frequency band is detected by FOOOF.
+    x_cond, y_cond : str
+        Condition types for the x-axis and y-axis.
+    figsize : tuple[float, float]
+        Figure subplot size.
+
+    Returns
+    -------
+    fig : Figure
+        Figure object.
+    axs : np.ndarray
+        Array of Axes objects.
+    """
+    from ..allen_helpers.stimuli import COND_LABEL
+
+    cond_power_db = 10 * np.log10(cond_band_power)
+    vmin, vmax = cond_power_db.min(), cond_power_db.max()
+    layers = cond_power_db.layer.values
+    fig, axs = plt.subplots(layers.size, 1, squeeze=False, figsize=(figsize[0], figsize[1] * layers.size))
+    for layer, ax in zip(layers, axs.ravel()):
+        cpower = cond_power_db.sel(layer=layer).transpose(y_cond, x_cond)
+        label = layer_bands_ds.attrs['wave_band'].title() + ' power (dB)'
+        band = layer_bands_ds.bands.sel(layer=layer).values
+
+        x = cpower.coords[x_cond].values
+        y = cpower.coords[y_cond].values
+        cpower = cpower.assign_coords({x_cond: range(x.size), y_cond: range(y.size)})
+
+        im = ax.imshow(cpower, origin='lower', vmin=vmin, vmax=vmax)
+        cbar = plt.colorbar(im, ax=ax, label=label, pad=0.03)
+        ax.set_xticks(cpower.coords[x_cond], labels=map('{:g}'.format, x))
+        ax.set_yticks(cpower.coords[y_cond], labels=map('{:g}'.format, y))
+        ax.set_xlabel(COND_LABEL[x_cond])
+        ax.set_ylabel(COND_LABEL[y_cond])
+        title = f'Layer {layer}, {band[0]:.1f} - {band[1]:.1f} Hz'
+        if not layer_bands_ds.detected.sel(layer=layer).item():
+            title += ' (undetected)'
+        ax.set_title(title)
+    fig.tight_layout()
+    return fig, axs
