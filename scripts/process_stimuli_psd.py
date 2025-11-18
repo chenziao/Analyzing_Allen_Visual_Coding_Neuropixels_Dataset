@@ -32,6 +32,8 @@ def process_stimuli_psd(
     psd_tseg: float = 0.5,
     df: float = 1.0,
 ):
+    import pandas as pd
+    import xarray as xr
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
     from toolkit.pipeline.data_io import SessionDirectory
@@ -65,20 +67,20 @@ def process_stimuli_psd(
         stim_trials = st.get_stimulus_trials(stimulus_presentations, stimulus_name=stim)
         aligned_lfp = st.align_trials(lfp_groups, stim_trials, window=(0., stim_trials.duration))
         psd_trials = ps.trial_psd(aligned_lfp, tseg=psd_tseg, df=df)
-        psd_avg = psd_trials.mean(dim='presentation_id', keep_attrs=True)
-        psd_das[stim] = psd_avg
+        psd_das[stim] = psd_trials.mean(dim='presentation_id', keep_attrs=True)
 
         if stim in drifting_gratings_stimuli:
             # psd in drifting gratings conditions
-            conditions = st.presentation_conditions(stim_trials.presentations, condition_types=st.CONDITION_TYPES)
-            cond_psd = st.average_across_conditions(psd_trials, *conditions)
-            cond_psd_das[stim] = cond_psd
+            conditions = st.presentation_conditions(stim_trials.presentations)
+            cond_psd = {stim: st.average_trials_with_conditions(psd_trials, *conditions)}
 
             # psd in drifting gratings time windows
             for window_name, window_range in drifting_gratings_windows.items():
                 aligned_lfp = st.align_trials(lfp_groups, stim_trials, window=window_range)
                 psd_trials = ps.trial_psd(aligned_lfp, tseg=psd_tseg, df=df)
-                psd_das[f'{stim}_{window_name}'] = psd_trials.mean(dim='presentation_id', keep_attrs=True)
+                stim_name = f'{stim}_{window_name}'
+                cond_psd[stim_name] = st.average_trials_with_conditions(psd_trials, *conditions)
+            cond_psd_das[stim] = xr.concat(cond_psd.values(), dim=pd.Index(cond_psd, name='stimulus'), combine_attrs='override')
 
 
     #################### Save data ####################

@@ -320,7 +320,7 @@ class SessionDirectory:
     def psd(self) -> Path:
         return self.session_dir / 'psd_channel_groups.nc'
 
-    def save_psd(self, psd_das : dict[str, xr.DataArray], channel_groups : xr.DataArray) -> None:
+    def save_psd(self, psd_das : dict[str, xr.DataArray] | xr.Dataset, channel_groups : xr.DataArray) -> None:
         """Save PSD of stimuli into a single dataset.
         
         Parameters
@@ -330,6 +330,8 @@ class SessionDirectory:
         channel_groups : xr.DataArray
             Channel groups of the LFP data used for PSD calculation.
         """
+        if isinstance(psd_das, xr.Dataset):
+            psd_das = dict(psd_das.data_vars)
         # Merge all PSDs into a dataset
         ds_attrs = next(iter(psd_das.values())).attrs
         ds_attrs = {key: ds_attrs[key] for key in ('fs', 'nfft', 'unit')}
@@ -342,10 +344,15 @@ class SessionDirectory:
         
         Returns
         -------
-        xr.Dataset
+        psd_ds : xr.Dataset
             PSD of stimuli. Unit: uV**2/Hz
+        channel_groups : xr.DataArray
+            Channel groups of the LFP data used for PSD calculation.
         """
-        return xr.load_dataset(self.psd)
+        psd_ds = xr.load_dataset(self.psd)
+        channel_groups = psd_ds.data_vars['channel_groups']
+        psd_ds = psd_ds.drop_vars('channel_groups')
+        return psd_ds, channel_groups
 
     # Conditions PSD
     def conditions_psd(self, stimulus_name : str) -> Path:
@@ -452,6 +459,16 @@ class SessionDirectory:
             if cond_band_power_file.exists():
                 cond_band_power_das[stim] = xr.load_dataarray(cond_band_power_file)
         return cond_band_power_das
+
+    # orientation with max power
+    def preferred_orientations(self, wave_band : str = 'beta') -> Path:
+        return self.session_dir / f'preferred_orientations_{wave_band}.nc'
+
+    def save_preferred_orientations(self, preferred_orientations : xr.DataArray, wave_band : str = 'beta') -> None:
+        preferred_orientations.to_netcdf(self.preferred_orientations(wave_band))
+
+    def load_preferred_orientations(self, wave_band : str = 'beta') -> xr.DataArray:
+        return xr.load_dataarray(self.preferred_orientations(wave_band))
 
 
 # Output directory

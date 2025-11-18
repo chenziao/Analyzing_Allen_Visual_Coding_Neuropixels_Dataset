@@ -82,10 +82,9 @@ def analyze_psd_fooof(
     import matplotlib.pyplot as plt
 
     import toolkit.allen_helpers.stimuli as st
-    import toolkit.analysis.spectrum as spec
     import toolkit.plots.plots as plots
+    import toolkit.pipeline.signal as ps
     import toolkit.plots.format as plt_fmt
-    import toolkit.pipeline.location as pl
     from toolkit.pipeline.data_io import SessionDirectory, format_for_path
     from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
     from toolkit.utils.quantity_units import as_string, as_quantity
@@ -95,7 +94,6 @@ def analyze_psd_fooof(
     #################### Get session and probe ####################
     session_dir = SessionDirectory(session_id, cache_lfp=True)
 
-    probe_info = session_dir.load_probe_info()
     if not session_dir.has_lfp_data:  # Skip session if it has no LFP data
         print(f"Session {session_id} has no LFP data. Skipping...")
         return
@@ -105,16 +103,9 @@ def analyze_psd_fooof(
 
     drifting_gratings_stimuli = st.STIMULUS_CATEGORIES[session_type]['drifting_gratings']
 
-    central_channels = probe_info['central_channels']
-    layers = np.array(list(central_channels))[pl.argsort_channels(
-        central_channels.values(), session_dir.load_lfp_channels())]
-
     #################### Load data and parameters ####################
-    psd_das = session_dir.load_psd()
+    psd_ds, channel_groups = session_dir.load_psd()
     cond_psd_das = session_dir.load_conditions_psd()
-
-    stimulus_names = list(psd_das)
-    stimulus_names.remove('channel_groups')
 
     fooof_params = dict(
         freq_range=freq_range,
@@ -135,73 +126,80 @@ def analyze_psd_fooof(
 
     #################### Analyze data ####################
     # Fit FOOOF and get frequency bands
-    fooof_objs = {}
-    bands = np.full((len(stimulus_names), layers.size, wave_band_limit.wave_band.size, 2), np.nan)
-    peaks = np.full(bands.shape[:-1] + (freq_band_kwargs['top_n_peaks'], ), np.nan)
-    center_freq = peaks.copy()
-
-    for i, stim in enumerate(stimulus_names):
-        psd_avg = psd_das[stim]
-        fooof_objs[stim] = {}
-        for j, layer in enumerate(layers):
-            psd_da = psd_avg.sel(layer=layer)
-
-            # fit fooof
-            fooof_result, fooof_objs[stim][layer], fooof_kwargs = spec.fit_fooof(psd_da, **fooof_params)
-            gaussian_params = fooof_result.gaussian_params
-
-            # get frequency bands
-            for k, wave_band in enumerate(wave_band_limit.wave_band):
-                band, peak_inds = spec.get_fooof_freq_band(
-                    gaussian_params=gaussian_params,
-                    freq_range=wave_band_limit.sel(wave_band=wave_band).values,
-                    width_limit=wave_band_width_limit.sel(wave_band=wave_band).values,
-                    **freq_band_kwargs
-                )
-
-                bands[i, j, k] = band
-                peaks[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 1]
-                center_freq[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 0]
-
-    coords = dict(stimulus=stimulus_names, layer=layers, wave_band=wave_band_limit.coords['wave_band'])
-    bands = xr.DataArray(data=bands, coords=coords | dict(bound=wave_band_limit.coords['bound']))
-    peaks = xr.DataArray(data=peaks, coords=coords | dict(peak_rank=range(peaks.shape[-1])))
-    center_freq = peaks.copy(data=center_freq)
-
-    bands_ds = xr.Dataset(dict(
-        bands=bands, peaks=peaks, center_freq=center_freq,
-        wave_band_limit=wave_band_limit,
-        wave_band_width_limit=wave_band_width_limit
-    ))
-    bands_ds.attrs.update(fooof_kwargs | fooof_params | freq_band_kwargs)
+    fooof_objs, bands_ds = ps.fit_fooof_and_get_bands(
+        psd_ds, fooof_params, freq_band_kwargs, wave_band_limit, wave_band_width_limit)
 
     # Get band power in drifting grating conditions
     fixed_condition_types = st.FIXED_CONDITION_TYPES[session_type]
 
     cond_band_power_das = {}
-
     for stim in drifting_gratings_stimuli:
         cond_band_power = {}
-        for layer in layers:
-            band = bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band)
-            if np.isnan(band).any():
-                continue
-            cond_psd = cond_psd_das[stim].sel(layer=layer)
+        for layer in bands_ds.coords['layer'].values:
+            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band)
+            detected = not np.isnan(band).any()
+            if not detected:  # use frequency range of interest if band is not detected by fooof
+                band = wave_band_limit.sel(wave_band=condition_wave_band)
+
+            cond_psd = cond_psd_das[stim].sel(stimulus=stim, layer=layer)
             power = cond_psd.sel(frequency=slice(*band)).integrate('frequency').mean(dim=fixed_condition_types)
             unit = as_string(as_quantity(cond_psd.attrs['unit']) * as_quantity('Hz'))
-            power.attrs.update(cond_psd.attrs | dict(unit=unit))
+            power.attrs.update(cond_psd.attrs | dict(unit=unit, detected=detected))
             cond_band_power[layer] = power
 
-        if cond_band_power:
-            cond_band_power_das[stim] = xr.concat(cond_band_power.values(),
-                dim=pd.Index(cond_band_power, name='layer'), combine_attrs='override')
-        else:
-            print(f"No layer has detected {condition_wave_band} band during {stim}.")
-            continue
+        cond_band_power_das[stim] = xr.concat(cond_band_power.values(),
+            dim=pd.Index(cond_band_power, name='layer'), combine_attrs='override')
+
+    # Drifting grating PSD with filtered conditions
+    condition_filters = GLOBAL_SETTINGS['condition_filters']
+    layer_of_interest = GLOBAL_SETTINGS['layer_of_interest']
+    drifting_gratings_windows = GLOBAL_SETTINGS['drifting_gratings_windows']
+
+    # filter drifting gratings conditions and find orientation with max power
+    cond_band_power = cond_band_power_das[drifting_gratings_stimuli[0]]  # first drifting grating stimulus as primary
+    cond_band_power = ps.filter_conditions(cond_band_power)
+    average_dims = tuple(d for d in cond_band_power.dims if d in st.CONDITION_TYPES and d != 'orientation')
+    preferred_orientations = cond_band_power.mean(dim=average_dims).idxmax(dim='orientation')
+
+    # get PSD with filtered conditions
+    filt_cond_psd = {}
+    preferred_orientation = preferred_orientations.sel(layer=[layer_of_interest]).values
+    for stim in drifting_gratings_stimuli:
+        cond_psd = ps.filter_conditions(cond_psd_das[stim]).sel(orientation=preferred_orientation)
+        cond_psd = cond_psd.mean(dim=st.CONDITION_TYPES)
+        filt_cond_psd[stim + '_filtered'] = psd_ds[stim].copy(data=cond_psd.sel(stimulus=stim))
+        for window_name in drifting_gratings_windows:
+            stim_name = f'{stim}_{window_name}'
+            filt_cond_psd[stim_name + '_filtered'] = psd_ds[stim].copy(data=cond_psd.sel(stimulus=stim_name))
+
+    # update PSD of stimuli
+    psd_ds = psd_ds.assign(filt_cond_psd)
+
+    # fit FOOOF and get frequency bands
+    filt_fooof_objs, filt_bands_ds = ps.fit_fooof_and_get_bands(
+        filt_cond_psd, fooof_params, freq_band_kwargs, wave_band_limit, wave_band_width_limit)
+
+    # update FOOOF objects
+    fooof_objs.update(filt_fooof_objs)
+    # add bands of filtered stimuli to bands_ds if not exist
+    add_stimulus = [s for s in filt_bands_ds.coords['stimulus'].values if s not in bands_ds.coords['stimulus']]
+    bands_ds = xr.concat([bands_ds, filt_bands_ds.sel(stimulus=add_stimulus)],
+        data_vars=['bands', 'peaks', 'center_freq'], dim='stimulus')
+
 
     #################### Save data ####################
-    session_dir.save_wave_bands(bands_ds)
+    # Save band power in drifting grating conditions
     session_dir.save_condition_band_power(cond_band_power_das)
+
+    # Save preferred orientations
+    session_dir.save_preferred_orientations(preferred_orientations)
+
+    # Save updated PSD of stimuli
+    session_dir.save_psd(psd_ds, channel_groups)
+
+    # Save bands
+    session_dir.save_wave_bands(bands_ds)
+
 
     #################### Save figures ####################
     if not plt_fmt.SAVE_FIGURE:
@@ -215,24 +213,23 @@ def analyze_psd_fooof(
     cond_band_power_dir = fig_dir / f"condition_{condition_wave_band}_power"
 
     # Plot PSD and FOOOF
-    for stim in stimulus_names:
+    for stim, psd_avg in psd_ds.data_vars.items():
         stim_layer_psd_dir = layer_psd_dir / stim
         stim_layer_psd_dir.mkdir(parents=True, exist_ok=True)
         stim_fooof_dir = fooof_dir / stim
         stim_fooof_dir.mkdir(parents=True, exist_ok=True)
 
-        psd_avg = psd_das[stim]
         ax = plots.plot_channel_psd(psd_avg, channel_dim='layer', freq_range=plt_range)
         ax.set_title(stim)
         fig = ax.get_figure()
         plt_fmt.save_figure(stim_layer_psd_dir, fig, name=session_str)
 
         figs = {}
-        for layer in layers:
+        for layer in psd_avg.coords['layer'].values:
             fig, ax = plt.subplots(1, 1)
             ax = plots.plot_fooof_quick(fooof_objs[stim][layer], freq_range=plt_range, ax=ax)
 
-            band = bands.sel(stimulus=stim, layer=layer)
+            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band)
             ax = plots.plot_freq_band(band, band.wave_band, ax=ax)
             ax.set_title(f"{stim} layer {layer}")
 
@@ -257,7 +254,7 @@ def analyze_psd_fooof(
         for layer, ax in zip(layers_, axs.ravel()):
             cpower = cond_power_db.sel(layer=layer).transpose(y_cond, x_cond)
             label = condition_wave_band.title() + ' power (dB)'
-            band = bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band).values
+            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band).values
 
             x = cpower.coords[x_cond].values
             y = cpower.coords[y_cond].values
@@ -269,7 +266,10 @@ def analyze_psd_fooof(
             ax.set_yticks(cpower.coords[y_cond], labels=map('{:g}'.format, y))
             ax.set_xlabel(cond_label[x_cond])
             ax.set_ylabel(cond_label[y_cond])
-            ax.set_title(f'Layer {layer}, {band[0]:.1f} - {band[1]:.1f} Hz')
+            title = f'Layer {layer}, {band[0]:.1f} - {band[1]:.1f} Hz'
+            if not cond_band_power.attrs['detected']:
+                title += ' (undetected)'
+            ax.set_title(title)
         fig.tight_layout()
 
         plt_fmt.save_figure(stim_cond_band_power_dir, fig, name=session_str)

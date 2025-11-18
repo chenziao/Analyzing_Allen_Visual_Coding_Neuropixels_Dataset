@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 # Lookup table for stimuli
 STIMULUS_NAMES = {
     "brain_observatory_1.1": [
+        'spontaneous',
         'flashes',
         'drifting_gratings',
         'natural_movie_three',
@@ -21,6 +22,7 @@ STIMULUS_NAMES = {
         'natural_scenes',
     ],
     "functional_connectivity": [
+        'spontaneous',
         'flashes',
         'drifting_gratings_contrast',
         'drifting_gratings_75_repeats',
@@ -162,10 +164,62 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
     return stimulus_trials
 
 
+def initial_spontaneous_presentation(
+    stimulus_presentations : pd.DataFrame,
+    duration : float | None = 240.,
+    stimulus_name : str = 'spontaneous'
+) -> tuple[float, float]:
+    """Get the presentation and window of the longest initial spontaneous period (before flashes)
+    
+    Parameters
+    ----------
+    stimulus_presentations : pd.DataFrame
+        Stimulus presentations.
+    duration : float | None
+        Duration of the initial spontaneous period. If None, the entire spontaneous period is returned.
+    stimulus_name : str
+        Stimulus name. Default is 'spontaneous'.
+    
+    Returns
+    -------
+    presentations : pd.DataFrame
+        Presentations of the initial spontaneous period.
+    window : tuple[float, float]
+        Window of the initial spontaneous period. The window is centered around the spontaneous block before flashes.
+    """
+    flashes_presentations = stimulus_presentations[stimulus_presentations['stimulus_name'] == 'flashes']
+    flashes_start_time = flashes_presentations.iloc[0]['start_time']
+    presentations = stimulus_presentations[stimulus_presentations['stimulus_name'] == stimulus_name]
+    # the longest spontaneous presentation before flashes
+    presentations = presentations[presentations['start_time'] < flashes_start_time]
+    presentations = presentations.iloc[[np.argmax(presentations['duration'])]]
+    window = presentations.iloc[0]['start_time'], presentations.iloc[0]['stop_time']
+    # restrict window to given duration
+    if duration is not None:
+        excluded_duration = (window[1] - window[0] - duration) / 2
+        if excluded_duration < 0:
+            raise ValueError(f"Spontaneous duration can be at most {duration:g} seconds")
+        window = (window[0] + excluded_duration, window[1] - excluded_duration)
+    return presentations, window
+
+
+def get_spontaneous_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str = 'spontaneous') -> StimulusTrials:
+    """Extract presentations (longest initial spontaneous period) in spontaneous stimulus type"""
+    presentations, window = initial_spontaneous_presentation(stimulus_presentations, stimulus_name=stimulus_name)
+    stimulus_trials = StimulusTrials(
+        presentations = presentations,
+        ids = presentations.index.values,
+        times = np.array([window[0]]),
+        duration = window[1] - window[0],
+        gap_duration = 0.
+    )
+    return stimulus_trials
+
 # map stimulus name to function to get stimulus trials
 
 ALIGN_FUNCTIONS = dict(
     # Common stimuli
+    spontaneous = get_spontaneous_trials,
     flashes = get_flashes_trials,
     # Brain Observatory 1.1
     drifting_gratings = get_gratings_trials,
@@ -236,37 +290,6 @@ def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]
         )
         stimulus_blocks.append(stimulus_block)
     return stimulus_blocks
-
-
-def initial_spontaneous_window(
-    stimulus_presentations : pd.DataFrame, duration : float | None = 240.
-) -> tuple[float, float]:
-    """Get the window of the initial spontaneous period (before flashes)
-    
-    Parameters
-    ----------
-    stimulus_presentations : pd.DataFrame
-        Stimulus presentations.
-    duration : float | None
-        Duration of the initial spontaneous period. If None, the entire spontaneous period is returned.
-    
-    Returns
-    -------
-    window : tuple[float, float]
-        Window of the initial spontaneous period. The window is centered around the spontaneous block before flashes.
-    """
-    flashes_presentations = stimulus_presentations[stimulus_presentations['stimulus_name'] == 'flashes']
-    flashes_start_time = flashes_presentations.iloc[0]['start_time']
-    presentations = stimulus_presentations[stimulus_presentations['stimulus_name'] == 'spontaneous']
-    # the spontaneous block before flashes
-    initial_spontaneous = presentations[presentations['start_time'] < flashes_start_time].iloc[-1]
-    window = initial_spontaneous['start_time'], initial_spontaneous['stop_time']
-    if duration is not None:
-        excluded_duration = (window[1] - window[0] - duration) / 2
-        if excluded_duration < 0:
-            raise ValueError(f"Spontaneous duration is shorter than {duration:g} seconds")
-        window = (window[0] + excluded_duration, window[1] - excluded_duration)
-    return window
 
 
 # General processing functions
@@ -362,12 +385,12 @@ def presentation_conditions(
     return condition_id, cond_presentation_id
 
 
-def average_across_conditions(
+def average_trials_with_conditions(
     da : xr.DataArray | xr.Dataset,
     condition_id : xr.DataArray,
     cond_presentation_id : dict[str, NDArray[int]]
 ) -> xr.DataArray | xr.Dataset:
-    """Average data across conditions.
+    """Average data with conditions across presentations.
     
     Parameters
     ----------
@@ -385,9 +408,7 @@ def average_across_conditions(
         New dimension is 'condition_id', which itself has dimensions of the condition types,
         with coordinates being the condition values.
     """
-    cond_da = [da.sel(presentation_id=i).mean(dim='presentation_id') for i in cond_presentation_id.values()]
+    cond_da = [da.sel(presentation_id=i).mean(dim='presentation_id', keep_attrs=True) for i in cond_presentation_id.values()]
     cond_da = xr.concat(cond_da, dim=pd.Index(cond_presentation_id, name='condition_id'), combine_attrs='override')
-    cond_da = cond_da.sel(condition_id=condition_id)
-    cond_da.attrs.update(da.attrs)
-    return cond_da
+    return cond_da.sel(condition_id=condition_id)
 

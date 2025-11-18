@@ -10,6 +10,7 @@ import pywt
 from fooof import FOOOF
 from fooof.sim.gen import gen_aperiodic
 
+from typing import Sequence
 from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
@@ -208,3 +209,21 @@ def get_fooof_freq_band(
     band = (band_freqs[:, 0].min(), band_freqs[:, 1].max())  # combined frequency band
     return band, peak_inds
 
+
+def average_psd_in_decibels(psd_da: xr.DataArray, dim: str | Sequence[str] | None = None) -> xr.DataArray:
+    """Average PSD in log scale (decibels).
+    
+    Parameters
+    ----------
+    psd_da: xr.DataArray
+        PSD data array.
+    dim: str | Sequence[str] | None
+        Dimensions to average over. If None, average over all dimensions except 'frequency'.
+    """
+    if dim is None:
+        dim = tuple(d for d in psd_da.dims if d != 'frequency')
+    # convert to decibels and average
+    psd_avg = np.log(psd_da).mean(dim=dim, skipna=True)
+    # convert back to linear scale
+    psd_avg = np.exp(psd_avg)
+    return psd_avg

@@ -9,12 +9,13 @@ import scipy.signal as ss
 from ..analysis.signal import bandpass_filter
 from ..utils.quantity_units import as_quantity, as_string
 
-from typing import Sequence
+from typing import Sequence, Callable
 from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
     from .data_io import SessionDirectory
     from ..allen_helpers.stimuli import StimulusBlock
+    from ..analysis.spectrum import FOOOF
 
 
 def get_lfp_channel_groups(
@@ -205,6 +206,116 @@ def bandpass_filter_blocks(
     return filtered_blocks
 
 
+def filter_conditions(da: xr.DataArray, condition_filters: dict[str, str | Callable] | None = None) -> xr.DataArray:
+    """Filter data array by drifting grating conditions.
+    
+    Parameters
+    ----------
+    da: xr.DataArray
+        Data array to filter. Dimensions include drifting grating conditions.
+    condition_filters: dict[str, str | Callable] | None
+        Dictionary of condition filters. Keys are dimension names, 
+        values are filter functions or strings of lambda functions.
+
+    Returns
+    -------
+    xr.DataArray
+        Filtered data array.
+    """
+    if condition_filters is None:
+        from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
+        condition_filters = GLOBAL_SETTINGS['condition_filters']
+    filtered_sel = {}
+    for dim in condition_filters.keys() & da.coords.keys():
+        filter_func = condition_filters[dim]
+        if isinstance(filter_func, str):
+            filter_func = eval(filter_func)
+        filtered_sel[dim] = filter_func(da.coords[dim])
+    return da.sel(filtered_sel)
+
+
+def fit_fooof_and_get_bands(
+    psd_das : xr.Dataset | dict[str, xr.DataArray],
+    fooof_params : dict,
+    freq_band_kwargs : dict,
+    wave_band_limit : xr.DataArray,
+    wave_band_width_limit : xr.DataArray
+) -> tuple[dict[str, dict[str, FOOOF]], xr.Dataset]:
+    """Fit FOOOF and get frequency bands.
+    
+    Parameters
+    ----------
+    psd_das : xr.Dataset | dict[str, xr.DataArray]
+        Dataset or dictionary of data arrays of PSD for each stimulus.
+    fooof_params : dict
+        Parameters for `toolkit.analysis.spectrum.fit_fooof`.
+    freq_band_kwargs : dict
+        Keyword arguments for `toolkit.analysis.spectrum.get_fooof_freq_band`.
+    wave_band_limit : xr.DataArray
+        Wave band limit. Must have 'wave_band' and 'bound' dimensions.
+    wave_band_width_limit : xr.DataArray
+        Wave band width limit. Must have 'wave_band' dimension.
+
+    Returns
+    -------
+    fooof_objs : dict[str, dict[str, FOOOF]]
+        FOOOF objects for each stimulus and layer.
+    bands_ds : xr.Dataset
+        Dataset of frequency bands detected by FOOOF.
+        Dimensions: 'stimulus', 'layer', 'wave_band', 'bound'.
+        Data variables:
+            bands : frequency band in Hz.
+            peaks : Top N peaks of gaussian parameters.
+            center_freq : Center frequency of the top N peaks in Hz.
+            wave_band_limit, wave_band_width_limit : Wave band limit and width limit parameters used.
+        Note: Frequency bands undetected by FOOOF are filled with NaN.
+    """
+    from ..analysis.spectrum import fit_fooof, get_fooof_freq_band
+    if isinstance(psd_das, xr.Dataset):
+        psd_das = dict(psd_das.data_vars)
+    stimulus_names = list(psd_das)
+    layers = next(iter(psd_das.values())).coords['layer'].values
+
+    bands = np.full((len(stimulus_names), layers.size, wave_band_limit.wave_band.size, 2), np.nan)
+    peaks = np.full(bands.shape[:-1] + (freq_band_kwargs['top_n_peaks'], ), np.nan)
+    center_freq = peaks.copy()
+
+    fooof_objs = {}
+    for i, (stim, psd_avg) in enumerate(psd_das.items()):
+        fooof_objs[stim] = {}
+        for j, layer in enumerate(layers):
+            # fit fooof
+            fooof_results = fit_fooof(psd_avg.sel(layer=layer), **fooof_params)
+            gaussian_params = fooof_results[0].gaussian_params
+            fooof_objs[stim][layer] = fooof_results[1]
+
+            # get frequency bands
+            for k, wave_band in enumerate(wave_band_limit.wave_band):
+                band, peak_inds = get_fooof_freq_band(
+                    gaussian_params=gaussian_params,
+                    freq_range=wave_band_limit.sel(wave_band=wave_band).values,
+                    width_limit=wave_band_width_limit.sel(wave_band=wave_band).values,
+                    **freq_band_kwargs
+                )
+
+                bands[i, j, k] = band
+                peaks[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 1]
+                center_freq[i, j, k, :peak_inds.size] = gaussian_params[peak_inds, 0]
+
+    coords = dict(stimulus=stimulus_names, layer=layers, wave_band=wave_band_limit.coords['wave_band'])
+    bands = xr.DataArray(data=bands, coords=coords | dict(bound=wave_band_limit.coords['bound']))
+    peaks = xr.DataArray(data=peaks, coords=coords | dict(peak_rank=range(peaks.shape[-1])))
+    center_freq = peaks.copy(data=center_freq)
+
+    bands_ds = xr.Dataset(dict(
+        bands=bands, peaks=peaks, center_freq=center_freq,
+        wave_band_limit=wave_band_limit,
+        wave_band_width_limit=wave_band_width_limit
+    ))
+    bands_ds.attrs.update(fooof_results[2] | fooof_params | freq_band_kwargs)
+    return fooof_objs, bands_ds
+
+
 def average_psd_across_sessions(
     psd_ds: Sequence[xr.Dataset] | Sequence[xr.DataArray],
     fs: float | None = None,
@@ -246,14 +357,11 @@ def average_psd_across_sessions(
 
     # gether and concatenate psd of stimulus for each session
     session_ids = [ds.attrs['session_id'] for ds in psd_ds]
-    if isinstance(psd_ds[0], xr.Dataset):  # drop data variable `channel_groups` (not PSD data)
-        psd_ds = [ds.drop_vars('channel_groups') for ds in psd_ds]
     psd_ds = [ds.assign_coords({'frequency': frequency}) for ds in psd_ds]  # use common frequency
     psd_ds = xr.concat(psd_ds, dim=pd.Index(session_ids, name='session_id'), combine_attrs='drop_conflicts')
     psd_ds = psd_ds.assign_attrs(attrs)
 
     # average across sessions in decibels
-    psd_avg = (10 * np.log10(psd_ds)).mean(dim='session_id', skipna=True)
-    psd_avg = 10 ** (psd_avg / 10) # convert back to linear scale
-    psd_avg = psd_avg.assign_attrs(attrs, n_sessions=n_seesions)
+    from ..analysis.spectrum import average_psd_in_decibels
+    psd_avg = average_psd_in_decibels(psd_ds, dim='session_id').assign_attrs(attrs, n_sessions=n_seesions)
     return psd_avg, psd_ds
