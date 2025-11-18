@@ -77,18 +77,15 @@ def analyze_psd_fooof(
     bandwidth_n_sigma: float = 1.5,
     condition_wave_band: str = GLOBAL_SETTINGS['condition_wave_band']
 ):
-    import numpy as np
-    import pandas as pd
     import xarray as xr
     import matplotlib.pyplot as plt
 
     import toolkit.allen_helpers.stimuli as st
     import toolkit.plots.plots as plots
     import toolkit.pipeline.signal as ps
-    import toolkit.plots.format as plt_fmt
     from toolkit.pipeline.data_io import SessionDirectory, format_for_path
-    from toolkit.utils.quantity_units import as_string, as_quantity
     from toolkit.paths.paths import FIGURE_DIR
+    from toolkit.plots.format import SAVE_FIGURE, save_figure
 
 
     #################### Get session and probe ####################
@@ -193,7 +190,7 @@ def analyze_psd_fooof(
 
 
     #################### Save figures ####################
-    if not plt_fmt.SAVE_FIGURE:
+    if not SAVE_FIGURE:
         return
 
     session_str = f"session_{session_id}"
@@ -213,20 +210,20 @@ def analyze_psd_fooof(
         ax = plots.plot_channel_psd(psd_avg, channel_dim='layer', freq_range=plt_range)
         ax.set_title(stim)
         fig = ax.get_figure()
-        plt_fmt.save_figure(stim_layer_psd_dir, fig, name=session_str)
+        save_figure(stim_layer_psd_dir, fig, name=session_str)
 
         figs = {}
         for layer in psd_avg.coords['layer'].values:
             fig, ax = plt.subplots(1, 1)
             ax = plots.plot_fooof_quick(fooof_objs[stim][layer], freq_range=plt_range, ax=ax)
 
-            band = bands_ds.bands.sel(stimulus=stim, layer=layer, wave_band=condition_wave_band)
+            band = bands_ds.bands.sel(stimulus=stim, layer=layer)
             ax = plots.plot_freq_band(band, band.wave_band, ax=ax)
             ax.set_title(f"{stim} layer {layer}")
 
             figs[f'{session_str}_layer_{format_for_path(layer)}'] = fig
 
-        plt_fmt.save_figure(stim_fooof_dir, figs)
+        save_figure(stim_fooof_dir, figs)
         plt.close('all')  # free memory
 
     # Plot band power in drifting grating conditions
@@ -236,7 +233,7 @@ def analyze_psd_fooof(
         stim_cond_band_power_dir.mkdir(parents=True, exist_ok=True)
 
         fig, axs = plots.plot_layer_condition_band_power(cond_band_power, layer_bands_ds[stim], x_cond, y_cond)
-        plt_fmt.save_figure(stim_cond_band_power_dir, fig, name=session_str)
+        save_figure(stim_cond_band_power_dir, fig, name=session_str)
 
     plt.close('all')
 
