@@ -120,11 +120,14 @@ def trial_psd(
         - 'nfft': number of FFT points for Welch method
         - 'n_dropped': number of samples dropped by Welch method from the last segment
         - 'unit': unit of the signal squared per Hertz
+
+    Note: NaN values are replaced with zeros and the PSD is scaled by 1 / (1 - p_nan) to avoid bias due to NaN values.
     """
     coords = dict(aligned_signal.coords)
     dims = list(aligned_signal.dims)
     time_axis = dims.index(time_dim)
     assert poverlap >= 0 and poverlap < 1, "poverlap must be between 0 and 1"
+    unit = aligned_signal.attrs['unit']
 
     # determine parameters for Welch method
     fs = aligned_signal.attrs['fs']
@@ -141,9 +144,20 @@ def trial_psd(
     else:
         nfft = int(np.round(fs / df / 2)) * 2  # ensure nfft is even
 
+    # check for NaN values and replace with zeros if any
+    is_nan = np.isnan(aligned_signal.values)
+    n_nan = is_nan.sum()
+    if n_nan:
+        p_nan = n_nan / aligned_signal.size
+        aligned_signal = np.where(is_nan, 0., aligned_signal)
+        print(f"Warning: {100 * p_nan:.2f}% NaN values found in signal. Replace with zeros.")
+
     # calculate PSD using Welch method
     f, pxx = ss.welch(aligned_signal, fs=fs, window=window,
         nperseg=nperseg, noverlap=noverlap, nfft=nfft, axis=time_axis)
+
+    if n_nan:
+        pxx /= (1 - p_nan)  # scale PSD by 1 / (1 - p_nan) to avoid bias due to NaN values
 
     del coords[time_dim]
     coords['frequency'] = f
@@ -156,7 +170,7 @@ def trial_psd(
         nseg=nseg,
         nfft=nfft,
         n_dropped=n_dropped,
-        unit=as_string(as_quantity(aligned_signal.attrs['unit']) ** 2 / as_quantity('Hz'))
+        unit=as_string(as_quantity(unit) ** 2 / as_quantity('Hz'))
     )
     return da
 
