@@ -297,8 +297,9 @@ def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]
 def align_trials(
     signal_array : xr.DataArray | xr.Dataset,
     stimulus_trials : StimulusTrials,
-    window : tuple[float, float] = (0., 1.)
-) -> xr.DataArray | xr.Dataset:
+    window : tuple[float, float] = (0., 1.),
+    ignore_nan_trials : str = 'auto'
+) -> tuple[xr.DataArray | xr.Dataset, StimulusTrials | None]:
     """Extract and align signal to time window relative to stimulus onset in given presentations
     
     Parameters
@@ -309,11 +310,19 @@ def align_trials(
         Stimulus trials.
     window : tuple[float, float]
         Window relative to stimulus onset to extract and align signal to.
+    ignore_nan_trials : str
+        How to handle NaN values in trials.
+        'any': ignore trials with any NaN values.
+        'all': ignore trials with all NaN values.
+        'auto': check 'any' first, and fall back to 'all' if all trials have any NaN values.
+        '' or any other value: do not ignore NaN values.
 
     Returns
     -------
     aligned_signal : xr.DataArray | xr.Dataset
         Aligned signal. Dimension: presentation_id, time_from_presentation_onset.
+    valid_trials : StimulusTrials | None
+        Valid trials. If no trial is dropped, return None.
     """
     fs = signal_array.attrs['fs']
     window_idx = int(np.floor(window[0] * fs)), int(np.ceil(window[1] * fs))
@@ -327,7 +336,40 @@ def align_trials(
     )
     aligned_signal = aligned_signal.assign_coords(time=inds).unstack('time')
     aligned_signal.attrs.update(signal_array.attrs)
-    return aligned_signal
+
+    if ignore_nan_trials not in {'auto', 'any', 'all'}:
+        ignore_nan_trials = ''  # not ignore nan trials
+
+    non_trial_dims = [d for d in aligned_signal.dims if d != 'presentation_id']
+    if ignore_nan_trials == 'auto' or ignore_nan_trials == 'any':
+        # check if each trial has any nan
+        nan_trials = np.isnan(aligned_signal).any(dim=non_trial_dims).values
+        # fall back to 'all' if 'auto' and all trials have any nan
+        if ignore_nan_trials == 'auto' and nan_trials.all():
+            ignore_nan_trials = 'all'
+            stimulus_name = stimulus_trials.presentations.iloc[0]['stimulus_name']
+            print(f"All trials have any NaN values in {stimulus_name}. Fall back to 'all'.")
+        else:
+            ignore_nan_trials = 'any'
+    if ignore_nan_trials == 'all':
+        # check if each trial has all nan
+        nan_trials = np.isnan(aligned_signal).all(dim=non_trial_dims).values
+    if ignore_nan_trials and nan_trials.any():
+        keep_trials = np.nonzero(~nan_trials)[0]
+        valid_trials = StimulusTrials(
+            presentations = stimulus_trials.presentations.iloc[keep_trials],
+            ids = stimulus_trials.ids[keep_trials],
+            times = stimulus_trials.times[keep_trials],
+            duration = stimulus_trials.duration,
+            gap_duration = stimulus_trials.gap_duration
+        )
+        aligned_signal = aligned_signal.isel(presentation_id=keep_trials)
+        stimulus_name = stimulus_trials.presentations.iloc[0]['stimulus_name']
+        print(f"Dropped {nan_trials.size - keep_trials.size} trials with "
+            f"{ignore_nan_trials} NaN values in {stimulus_name}.")
+    else:
+        valid_trials = None
+    return aligned_signal, valid_trials
 
 
 def align_trials_from_blocks(

@@ -65,18 +65,31 @@ def process_stimuli_psd(
 
     for stim in stimulus_names:
         stim_trials = st.get_stimulus_trials(stimulus_presentations, stimulus_name=stim)
-        aligned_lfp = st.align_trials(lfp_groups, stim_trials, window=(0., stim_trials.duration))
+        aligned_lfp, valid_trials = st.align_trials(
+            lfp_groups, stim_trials, window=(0., stim_trials.duration),
+            ignore_nan_trials='any' if stim in drifting_gratings_stimuli else 'auto'
+        )
         psd_trials = ps.trial_psd(aligned_lfp, tseg=psd_tseg, df=df)
         psd_das[stim] = psd_trials.mean(dim='presentation_id', keep_attrs=True)
 
         if stim in drifting_gratings_stimuli:
             # psd in drifting gratings conditions
             conditions = st.presentation_conditions(stim_trials.presentations)
+            if valid_trials is not None:  # if any trial is dropped by NaN values
+                cond_presentation_id = st.presentation_conditions(valid_trials.presentations)[1]
+                if len(conditions[1]) != len(cond_presentation_id):
+                    diff = set(conditions[1].keys()) - set(cond_presentation_id.keys())
+                    raise ValueError(f"All trials are dropped by NaN values in {stim} for conditions: {diff}")
+                conditions = (conditions[0], cond_presentation_id)
             cond_psd = {stim: st.average_trials_with_conditions(psd_trials, *conditions)}
 
             # psd in drifting gratings time windows
             for window_name, window_range in drifting_gratings_windows.items():
-                aligned_lfp = st.align_trials(lfp_groups, stim_trials, window=window_range)
+                # use valid trials if any trial is dropped, do not drop trials here
+                aligned_lfp, _ = st.align_trials(
+                    lfp_groups, stim_trials if valid_trials is None else valid_trials,
+                    window=window_range, ignore_nan_trials=''
+                )
                 psd_trials = ps.trial_psd(aligned_lfp, tseg=psd_tseg, df=df)
                 stim_name = f'{stim}_{window_name}'
                 cond_psd[stim_name] = st.average_trials_with_conditions(psd_trials, *conditions)
