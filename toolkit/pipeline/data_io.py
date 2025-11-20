@@ -408,7 +408,7 @@ class SessionDirectory:
         """
         wave_bands.to_netcdf(self.wave_bands)
 
-    def load_bands(self) -> xr.Dataset:
+    def load_wave_bands(self) -> xr.Dataset:
         """Load detected frequency bands from FOOOF analysis."""
         return xr.load_dataset(self.wave_bands)
 
