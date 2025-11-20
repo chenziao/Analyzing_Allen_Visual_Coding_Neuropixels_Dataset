@@ -285,6 +285,7 @@ def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]
             ids = stimulus_trials.ids[block_idx],
             times = stimulus_trials.times[block_idx],
             duration = stimulus_trials.duration,
+            gap_duration = stimulus_trials.gap_duration,
             block_id = block_id,
             block_window = block_window,
         )
@@ -296,17 +297,17 @@ def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]
 
 def align_trials(
     signal_array : xr.DataArray | xr.Dataset,
-    stimulus_trials : StimulusTrials,
+    stimulus_trials : StimulusTrials | StimulusBlock,
     window : tuple[float, float] = (0., 1.),
     ignore_nan_trials : str = 'auto'
-) -> tuple[xr.DataArray | xr.Dataset, StimulusTrials | None]:
+) -> tuple[xr.DataArray | xr.Dataset, StimulusTrials | StimulusBlock | None]:
     """Extract and align signal to time window relative to stimulus onset in given presentations
     
     Parameters
     ----------
     signal_array : xr.DataArray | xr.Dataset
         Signal array. Attributes must include 'fs'.
-    stimulus_trials : StimulusTrials
+    stimulus_trials : StimulusTrials | StimulusBlock
         Stimulus trials.
     window : tuple[float, float]
         Window relative to stimulus onset to extract and align signal to.
@@ -321,7 +322,7 @@ def align_trials(
     -------
     aligned_signal : xr.DataArray | xr.Dataset
         Aligned signal. Dimension: presentation_id, time_from_presentation_onset.
-    valid_trials : StimulusTrials | None
+    valid_trials : StimulusTrials | StimulusBlock | None
         Valid trials. If no trial is dropped, return None.
     """
     fs = signal_array.attrs['fs']
@@ -355,14 +356,13 @@ def align_trials(
         # check if each trial has all nan
         nan_trials = np.isnan(aligned_signal).all(dim=non_trial_dims).values
     if ignore_nan_trials and nan_trials.any():
+        from copy import copy
         keep_trials = np.nonzero(~nan_trials)[0]
-        valid_trials = StimulusTrials(
-            presentations = stimulus_trials.presentations.iloc[keep_trials],
-            ids = stimulus_trials.ids[keep_trials],
-            times = stimulus_trials.times[keep_trials],
-            duration = stimulus_trials.duration,
-            gap_duration = stimulus_trials.gap_duration
-        )
+        valid_trials = copy(stimulus_trials)
+        valid_trials.presentations = valid_trials.presentations.iloc[keep_trials].copy()
+        valid_trials.ids = valid_trials.ids[keep_trials]
+        valid_trials.times = valid_trials.times[keep_trials]
+
         aligned_signal = aligned_signal.isel(presentation_id=keep_trials)
         stimulus_name = stimulus_trials.presentations.iloc[0]['stimulus_name']
         print(f"Dropped {nan_trials.size - keep_trials.size} trials with "
@@ -375,16 +375,20 @@ def align_trials(
 def align_trials_from_blocks(
     signal_array : xr.DataArray | xr.Dataset,
     stimulus_blocks : list[StimulusBlock],
-    window : tuple[float, float] = (0., 1.)
-) -> xr.DataArray | xr.Dataset:
+    window : tuple[float, float] = (0., 1.),
+    ignore_nan_trials : str = 'auto'
+) -> tuple[xr.DataArray | xr.Dataset, list[StimulusBlock | None]]:
     """Extract and align signal to time window relative to stimulus onset in given blocks.
     Similar to `align_trials()`, but for multiple blocks.
     """
     aligned_signals = []
+    valid_blocks = []
     for stimulus_block in stimulus_blocks:
-        aligned_signals.append(align_trials(signal_array, stimulus_block, window))
+        aligned_signal, valid_trials = align_trials(signal_array, stimulus_block, window, ignore_nan_trials)
+        aligned_signals.append(aligned_signal)
+        valid_blocks.append(valid_trials)
     aligned_signal = xr.concat(aligned_signals, dim='presentation_id', combine_attrs='override')
-    return aligned_signal
+    return aligned_signal, valid_blocks
 
 
 def presentation_conditions(

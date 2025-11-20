@@ -68,14 +68,14 @@ def analyze_psd_fooof(
     session_id: int,
     freq_range: list[float],
     aperiodic_mode: str,
-    peak_width_limits: list[float],
+    peak_width_limits: list[float, float],
     max_n_peaks: int,
     dB_threshold: float,
     peak_threshold: float,
     plt_range: float,
-    top_n_peaks: int = 2,
-    bandwidth_n_sigma: float = 1.5,
-    condition_wave_band: str = GLOBAL_SETTINGS['condition_wave_band']
+    top_n_peaks: int,
+    bandwidth_n_sigma: float,
+    condition_wave_band: str
 ):
     import xarray as xr
     import matplotlib.pyplot as plt
@@ -120,6 +120,7 @@ def analyze_psd_fooof(
         coords=dict(wave_band=list(wave_band_limit), bound=['lower', 'upper']))
     wave_band_width_limit = wave_band_limit.copy(
         data=list(GLOBAL_SETTINGS['wave_band_width_limit'].values()))
+
 
     #################### Analyze data ####################
     # Fit FOOOF and get frequency bands
