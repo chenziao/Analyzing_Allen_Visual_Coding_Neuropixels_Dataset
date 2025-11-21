@@ -78,10 +78,18 @@ def analyze_csd(
     # parameters
     wave_bands = bands_ds.wave_band.values
 
+    coordinates = lfp_channels['dorsal_ventral_ccf_coordinate']
+    if np.isnan(coordinates).any():  # if ccf coordinates are missing, use probe vertical position
+        coordinates = lfp_channels['probe_vertical_position']
+        coordinates_label = 'Vertical Position'
+    else:
+        coordinates_label = 'Dorsal-Ventral CCF'
+
     csd_plot_kwargs = dict(
         channel_positions=channel_positions,
         central_channels=central_channels,
-        ccf_coordinates=lfp_channels['dorsal_ventral_ccf_coordinate']
+        coordinates=coordinates,
+        coordinates_label=coordinates_label
     )
 
 

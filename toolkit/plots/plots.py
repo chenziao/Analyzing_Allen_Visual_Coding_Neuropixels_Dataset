@@ -55,9 +55,9 @@ def plot_channel_signal_array(
     channel_positions : pd.Series,
     signal : ArrayLike,
     central_channels : dict[str, int] | None = None,
-    ccf_coordinates : ArrayLike | None = None,
-    ccf_label : str = 'Dorsal-Ventral',
-    ccf_tick_step : int = 4,
+    coordinates : ArrayLike | None = None,
+    coordinates_label : str = 'Dorsal-Ventral CCF',
+    coordinates_tick_step : int = 4,
     ax : Axes | None = None,
     pcolormesh_kwargs : dict = {},
     xlabel : str = f'Time ({UNIT.s})',
@@ -78,12 +78,12 @@ def plot_channel_signal_array(
     central_channels : dict[str, int] | None
         Dictionary of central channels for each layer {layer acronym: channel id}.
         If specified, show the layer labels on y-axis.
-    ccf_coordinates : ArrayLike | None
-        CCF coordinates of the channels. If specified, show the CCF coordinates on y-axis.
-    ccf_label : str
-        Label for the CCF axis. Default is 'Dorsal-Ventral'.
-    ccf_tick_step : int
-        Step for the CCF tick labels (number of channels between ticks).
+    coordinates : ArrayLike | None
+        Coordinates of the channels. If specified, show the coordinates on y-axis.
+    coordinates_label : str
+        Label for the coordinates axis. Default is 'Dorsal-Ventral CCF'.
+    coordinates_tick_step : int
+        Step for the coordinates tick labels (number of channels between ticks).
     ax : Axes | None
         Axes to plot on. If None, a new figure and axes will be created.
     pcolormesh_kwargs : dict
@@ -118,7 +118,7 @@ def plot_channel_signal_array(
         ax.set_yticklabels(central_channels.keys())
 
     # Show ccf coordinates
-    if ccf_coordinates is not None:
+    if coordinates is not None:
         if central_channels is not None:
             ax.spines['left'].set_position(('outward', 50))  # Move the labels outward
             ax2 = ax.twinx()  # Add a second y-axis with CCF labels
@@ -128,11 +128,11 @@ def plot_channel_signal_array(
         else:
             ax2 = ax
 
-        ax2.set_ylabel(f'{ccf_label} CCF ({UNIT.um})', labelpad=0)
+        ax2.set_ylabel(f'{coordinates_label} ({UNIT.um})', labelpad=0)
 
         # Choose a subset for labeling every 4th channel
-        subset_idx = np.arange(0, len(channel_positions), ccf_tick_step)
-        subset_labels = map(str, np.round(np.asarray(ccf_coordinates)[subset_idx]).astype(int))
+        subset_idx = np.arange(0, len(channel_positions), coordinates_tick_step)
+        subset_labels = map(str, np.round(np.asarray(coordinates)[subset_idx]).astype(int))
         ax2.set_yticks(channel_positions.iloc[subset_idx])
         ax2.set_yticklabels(subset_labels)
 
