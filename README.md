@@ -69,6 +69,7 @@ pip install -r requirements.txt
       - `all`: All sessions in Allen's database.
       - `test`: Test sessions listed in `'test'` key of [sessions.json](sessions.json).
       - `selected`: Selected sessions recorded in `session_selection.csv` file in the `output` folder (see `output_base_dir` in [path_config.json](path_config.json)).
+      - `unselected`: Unselected sessions recorded in `session_selection.csv` file in the `output` folder (see `output_base_dir` in [path_config.json](path_config.json)), excluding sessions with missing LFP data.
       - `optotag`: Optotag sessions. (Not implemented yet)
     - `--session_list`: List of session IDs to process (space-separated). `--session_set` argument will be ignored if this is provided.
     - `--use_blacklist`: Use sessions blacklist to exclude sessions to process to avoid uncaught errors in some sessions that may cause the batch processing to stall. The blacklist is listed in `'blacklist'` key of [sessions.json](sessions.json).
@@ -82,14 +83,29 @@ pip install -r requirements.txt
     - Find probe channels for the target structure (e.g. VISp).
     - Compute CSD for the channels in the structure. If `--skip_compute_csd` is set to `True`, the script will skip computing CSD.
 
-    Note: Run the notebook [check_channel_layer_positions](notebooks/check_channel_layer_positions.ipynb) to overwrite the probe info file and LFP channels file whose layer positions are missing to avoid errors in further processing.
+    Additional processing: After finishing the batch process, run the notebook [check_channel_layer_positions](notebooks/check_channel_layer_positions.ipynb) to overwrite the probe info file and LFP channels file whose layer positions are missing to avoid errors in further processing.
 
 2. [process_stimuli_psd.py](scripts/process_stimuli_psd.py)
 
     - Calculate average PSD of stimuli.
     - Calculate PSD averaged across each condition of drifting gratings stimuli.
 
-### Notebooks (for interactive analysis and visualization)
+3. [analyze_psd_fooof.py](scripts/analyze_psd_fooof.py)
+
+    - Fit FOOOF to the PSD of stimuli.
+    - Get frequency bands of waves specified in [global_settings.json](global_settings.json).
+    - Calculate band power in drifting grating conditions and PSD of stimuli with filtered conditions.
+    - Save figures. (Optional: set `save_figure` to `true` in [output_config.json](output_config.json))
+
+    Additional processing: After finishing the batch process, run the notebook [compile_psd.ipynb](notebooks/compile_psd.ipynb) with `session_set = 'all'` to compile the PSD of stimuli and frequency bands of waves for all sessions.
+
+4. [analyze_csd.py](scripts/analyze_csd.py)
+
+    - Get trial averaged CSD and CSD power in wave bands from FOOOF results for stimuli flashes and drifting gratings.
+    - Save figures. (Optional: set `save_figure` to `true` in [output_config.json](output_config.json))
+
+### Notebooks
+  For interactive analysis and visualization. Some of them are part of the procedures in [Scripts](#scripts-execute-in-order-later-scripts-may-depend-on-the-results-of-previous-scripts).
 
 - [Find_Probe_Channels](notebooks/Find_Probe_Channels.ipynb)
 
@@ -101,11 +117,32 @@ pip install -r requirements.txt
 
 - [Spectral_analysis](notebooks/Spectral_analysis.ipynb)
 
-  Calculate PSD of stimuli of a session and apply FOOOF to fit the PSD.
+  Calculate PSD of stimuli of a session and apply FOOOF to fit the PSD. Get frequency bands of waves specified in [global_settings.json](global_settings.json). Calculate band power in drifting grating conditions and PSD of stimuli with filtered conditions.
+
+- [compile_psd](notebooks/compile_psd.ipynb)
+  
+  Compile the PSD of stimuli and frequency bands of waves for all sessions.
+    1. Compute the average PSD across sessions and get the frequency bands of waves.
+    2. Compile frequency bands of waves for all sessions.
+    3. Find sessions with good power of each wave bands of interest.
+    4. Find the frequency band of each wave in the layer of interest in specific stimulus.
+    5. Save results to data files of above steps.
+    6. Save figures of average PSD across sessions. (Optional: set `save_figure` to `true` in [output_config.json](output_config.json))
 
 - [CSD_during_stimuli](notebooks/CSD_during_stimuli.ipynb)
 
-  Analyze the CSD during stimuli.
+  Analyze the trial averaged CSD and CSD power in wave bands from FOOOF results for stimuli flashes and drifting gratings.
+
+Helper notebooks:
+
+- [compress_data](notebooks/compress_data.ipynb)
+
+  Compress the data files from the cache or output directory to .zip files with file patterns filtered.
+
+- [review_figures](notebooks/review_figures.ipynb)
+
+  Display the figures in the notebook with specific file patterns filtered from the output figure directory.
+
 
 ## Analysis Procedures (Legacy)
 
