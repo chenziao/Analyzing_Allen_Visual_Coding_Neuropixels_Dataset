@@ -6,97 +6,17 @@ import sys
 import contextlib
 import traceback
 from pathlib import Path
-from enum import Enum
+
 from dataclasses import dataclass
 
 from ..paths import paths
 from ..pipeline.global_settings import GLOBAL_SETTINGS
+from .data_io import SessionSet, get_sessions
 
 from typing import Sequence, Callable, Any
 
 
 # Parse arguments from command line
-
-class SessionSet(Enum):
-    ALL = 'all'
-    TEST = 'test'
-    SELECTED = 'selected'
-    OPTOTAG = 'optotag'
-    CUSTOM = 'custom'
-
-
-def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int], SessionSet]:
-    """Get the sessions from the session set.
-
-    Parameters
-    ----------
-    session_set: SessionSet | str | list[int]
-        The session set to get the sessions from. Can be a SessionSet enum, a string, or a list of session IDs.
-
-    Returns
-    -------
-    sessions : list[int]
-        The list of sessions from the session set.
-    session_set : SessionSet
-        The session set.
-    """
-    if isinstance(session_set, list):
-        sessions = session_set
-        session_set = SessionSet.CUSTOM
-        return sessions, session_set
-
-    if isinstance(session_set, str):
-        session_set = SessionSet(session_set.lower())
-
-    match session_set:
-        case SessionSet.ALL:
-            # Get all sessions available in the database
-            from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
-            cache = EcephysProjectCache.from_warehouse(manifest=paths.ECEPHYS_MANIFEST_FILE)
-            sessions = cache.get_session_table().index.to_list()
-
-        case SessionSet.TEST:
-            # Get test sessions from the sessions file
-            with open(paths.SESSIONS_FILE, 'r') as f:
-                sessions_config = json.load(f)
-            sessions = sessions_config.get('test', [])
-            if not sessions:
-                raise ValueError("No test sessions found in the sessions file")
-
-        case SessionSet.SELECTED:
-            # Get selected sessions from the session selection file
-            from .data_io import get_session_selection
-            sessions_df = get_session_selection()
-            sessions = sessions_df.index[sessions_df['selected']].to_list()
-
-        case SessionSet.OPTOTAG:
-            raise NotImplementedError("Optotag sessions are not implemented yet")
-
-        case SessionSet.CUSTOM:
-            raise ValueError("Custom sessions need to be provided as a list of session IDs")
-
-    return sessions, session_set
-
-
-def get_blacklist_sessions() -> list[int]:
-    """Get the blacklist sessions from the sessions file."""
-    with open(paths.SESSIONS_FILE, 'r') as f:
-        sessions_config = json.load(f)
-    return sessions_config.get('blacklist', [])
-
-
-def filter_blacklist_sessions(sessions: list[int]) -> list[int]:
-    """Filter the sessions with blacklist and return the accepted and blacklisted sessions."""
-    blacklist_sessions = set(get_blacklist_sessions())
-    accepted_sessions = []
-    blacklisted_sessions = []
-    for session in sessions:
-        if session in blacklist_sessions:
-            blacklisted_sessions.append(session)
-        else:
-            accepted_sessions.append(session)
-    return accepted_sessions, blacklisted_sessions
-
 
 @dataclass
 class Parameter():
@@ -214,6 +134,26 @@ class BatchProcessArgumentParser():
 
 
 # Process sessions
+
+def get_blacklist_sessions() -> list[int]:
+    """Get the blacklist sessions from the sessions file."""
+    with open(paths.SESSIONS_FILE, 'r') as f:
+        sessions_config = json.load(f)
+    return sessions_config.get('blacklist', [])
+
+
+def filter_blacklist_sessions(sessions: list[int]) -> list[int]:
+    """Filter the sessions with blacklist and return the accepted and blacklisted sessions."""
+    blacklist_sessions = set(get_blacklist_sessions())
+    accepted_sessions = []
+    blacklisted_sessions = []
+    for session in sessions:
+        if session in blacklist_sessions:
+            blacklisted_sessions.append(session)
+        else:
+            accepted_sessions.append(session)
+    return accepted_sessions, blacklisted_sessions
+
 
 def get_timestamp(format: str = '%Y-%m-%d %H:%M:%S') -> str:
     """Get the current timestamp in local time in the given format."""

@@ -7,6 +7,7 @@ import json
 import numpy as np
 import pandas as pd
 import xarray as xr
+from enum import Enum
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
 from ..utils.quantity_units import convert_unit, units_equal
@@ -17,47 +18,9 @@ from typing import Any
 
 if TYPE_CHECKING:
     from allensdk.brain_observatory.ecephys.ecephys_session import EcephysSession
-    from toolkit.pipeline.batch_process import SessionSet
 
 
 STRUCTURE_ACRONYM = GLOBAL_SETTINGS['ecephys_structure_acronym']
-
-
-def get_existing_sessions(
-    session_set : SessionSet | str | list[int],
-    structure_acronym : str = STRUCTURE_ACRONYM
-) -> tuple[list[int], list[int]]:
-    """Get the existing sessions in the data cache directory.
-    
-    Parameters
-    ----------
-    session_set : SessionSet | str | list[int]
-        The session set to get the sessions from.
-    structure_acronym : str
-        The structure acronym to get the sessions from.
-
-    Returns
-    -------
-    session_list : list[int]
-        The list of existing sessions.
-    missing_sessions : list[int]
-        The list of missing sessions.
-    """
-    from toolkit.pipeline.batch_process import get_sessions
-    data_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym
-    session_list = []
-    missing_sessions = []
-    for s in get_sessions(session_set)[0]:
-        f = data_dir / str(s)
-        if f.is_dir():
-            session_list.append(s)
-        else:
-            missing_sessions.append(s)
-
-    if missing_sessions:
-        print("Sessions missing from the data cache directory:")
-        print('\n'.join(map(str, missing_sessions)))
-    return session_list, missing_sessions
 
 
 # Processed data directory
@@ -501,9 +464,72 @@ class SessionDirectory:
 
 # Output directory
 
-def format_for_path(path : str) -> str:
-    """Format a string to be valid for a path"""
-    return re.sub(r'[\\/:*?"<>|]', '_', path)
+class SessionSet(Enum):
+    ALL = 'all'
+    TEST = 'test'
+    SELECTED = 'selected'
+    UNSELECTED = 'unselected'
+    OPTOTAG = 'optotag'
+    CUSTOM = 'custom'
+
+
+def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int], SessionSet]:
+    """Get the sessions from the session set.
+
+    Parameters
+    ----------
+    session_set: SessionSet | str | list[int]
+        The session set to get the sessions from. Can be a SessionSet enum, a string, or a list of session IDs.
+
+    Returns
+    -------
+    sessions : list[int]
+        The list of sessions from the session set.
+    session_set : SessionSet
+        The session set.
+    """
+    if isinstance(session_set, list):
+        sessions = session_set
+        session_set = SessionSet.CUSTOM
+        return sessions, session_set
+
+    if isinstance(session_set, str):
+        session_set = SessionSet(session_set.lower())
+
+    match session_set:
+        case SessionSet.ALL:
+            # Get all sessions available in the database
+            from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
+            cache = EcephysProjectCache.from_warehouse(manifest=paths.ECEPHYS_MANIFEST_FILE)
+            sessions = cache.get_session_table().index.to_list()
+
+        case SessionSet.TEST:
+            # Get test sessions from the sessions file
+            with open(paths.SESSIONS_FILE, 'r') as f:
+                sessions_config = json.load(f)
+            sessions = sessions_config.get('test', [])
+            if not sessions:
+                raise ValueError("No test sessions found in the sessions file")
+
+        case SessionSet.SELECTED:
+            # Get selected sessions from the session selection file
+            sessions_df = get_session_selection()
+            sessions = sessions_df.index[sessions_df['selected']].to_list()
+
+        case SessionSet.UNSELECTED:
+            # Get unselected sessions from the session selection file
+            sessions_df = get_session_selection()
+            # Unselected sessions that have valid data
+            idx = sessions_df['has_structure'] & sessions_df['has_lfp_data'] & ~sessions_df['selected'] 
+            sessions = sessions_df.index[idx].to_list()
+
+        case SessionSet.OPTOTAG:
+            raise NotImplementedError("Optotag sessions are not implemented yet")
+
+        case SessionSet.CUSTOM:
+            raise ValueError("Custom sessions need to be provided as a list of session IDs")
+
+    return sessions, session_set
 
 
 def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.DataFrame:
@@ -547,3 +573,44 @@ def initialize_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) ->
     sessions_df['has_lfp_data'] = has_lfp_data
     sessions_df['selected'] = sessions_df['has_structure'] & sessions_df['has_lfp_data']
     return sessions_df
+
+
+def get_existing_sessions(
+    session_set : SessionSet | str | list[int],
+    structure_acronym : str = STRUCTURE_ACRONYM
+) -> tuple[list[int], list[int]]:
+    """Get the existing sessions in the data cache directory.
+    
+    Parameters
+    ----------
+    session_set : SessionSet | str | list[int]
+        The session set to get the sessions from.
+    structure_acronym : str
+        The structure acronym to get the sessions from.
+
+    Returns
+    -------
+    session_list : list[int]
+        The list of existing sessions.
+    missing_sessions : list[int]
+        The list of missing sessions.
+    """
+    data_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym
+    session_list = []
+    missing_sessions = []
+    for s in get_sessions(session_set)[0]:
+        f = data_dir / str(s)
+        if f.is_dir():
+            session_list.append(s)
+        else:
+            missing_sessions.append(s)
+
+    if missing_sessions:
+        print("Sessions missing from the data cache directory:")
+        print('\n'.join(map(str, missing_sessions)))
+    return session_list, missing_sessions
+
+
+def format_for_path(path : str) -> str:
+    """Format a string to be valid for a path"""
+    return re.sub(r'[\\/:*?"<>|]', '_', path)

@@ -103,7 +103,7 @@ def analyze_csd(
         freq_band = ps.get_band_with_highest_peak(bands_ds.sel(stimulus=stim, wave_band=wave_band))
         if freq_band is not None:
             freq_bands.append(freq_band)
-    freq_bands = xr.concat(freq_bands, dim='wave_band')
+    freq_bands = xr.concat(freq_bands, dim='wave_band', coords=['layer'])
 
     csd_power = {}
     for wave_band in freq_bands.wave_band.values:
