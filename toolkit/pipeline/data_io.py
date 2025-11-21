@@ -470,6 +470,34 @@ class SessionDirectory:
     def load_preferred_orientations(self, wave_band : str = 'beta') -> xr.DataArray:
         return xr.load_dataarray(self.preferred_orientations(wave_band))
 
+    # Stimulus trial averaged CSD
+    def stimulus_csd(self, stimulus_name : str) -> Path:
+        return self.session_dir / f'{stimulus_name}_csd.nc'
+
+    def save_stimulus_csd(self, csd_dss : dict[str, xr.Dataset]) -> None:
+        """Save stimulus trial averaged CSDs into separate data files.
+
+        Parameters
+        ----------
+        csd_dss : dict[str, xr.Dataset]
+            Dictionary of {stimulus_name: stimulus CSD dataset}.
+        """
+        for stim, ds in csd_dss.items():
+            ds.to_netcdf(self.stimulus_csd(stim))
+
+    def load_stimulus_csd(self) -> dict[str, xr.Dataset]:
+        """Load stimulus trial averaged CSDs from separate data files.
+        
+        Returns
+        -------
+        csd_dss : dict[str, xr.Dataset]
+            Dictionary of {stimulus_name: stimulus CSD dataset}.
+        """
+        csd_files = list(self.session_dir.glob("*_csd.nc"))
+        stimulus_names = [f.stem.removesuffix('_csd') for f in csd_files]
+        csd_dss = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, csd_files)}
+        return csd_dss
+
 
 # Output directory
 

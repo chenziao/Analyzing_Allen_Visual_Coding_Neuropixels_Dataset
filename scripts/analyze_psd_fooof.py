@@ -81,8 +81,8 @@ def analyze_psd_fooof(
     import matplotlib.pyplot as plt
 
     import toolkit.allen_helpers.stimuli as st
-    import toolkit.plots.plots as plots
     import toolkit.pipeline.signal as ps
+    import toolkit.plots.plots as plots
     from toolkit.pipeline.data_io import SessionDirectory, format_for_path
     from toolkit.paths.paths import FIGURE_DIR
     from toolkit.plots.format import SAVE_FIGURE, save_figure
@@ -194,12 +194,12 @@ def analyze_psd_fooof(
     if not SAVE_FIGURE:
         return
 
-    session_str = f"session_{session_id}"
-
     fig_dir = FIGURE_DIR / "PSD"
     layer_psd_dir = fig_dir / "layer_psd"
     fooof_dir = fig_dir / "fooof"
     cond_band_power_dir = fig_dir / f"condition_{condition_wave_band}_power"
+
+    session_str = f"session_{session_id}"
 
     # Plot PSD and FOOOF
     for stim, psd_avg in psd_ds.data_vars.items():

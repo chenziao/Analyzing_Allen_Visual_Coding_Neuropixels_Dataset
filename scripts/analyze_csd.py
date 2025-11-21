@@ -38,18 +38,17 @@ def analyze_csd(
     import xarray as xr
     from matplotlib import pyplot as plt
 
-    import add_path
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
     from toolkit.pipeline.data_io import SessionDirectory
     from toolkit.analysis.signal import bandpass_power
     from toolkit.plots.plots import plot_channel_signal_array
+    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
     from toolkit.paths import RESULTS_DIR, FIGURE_DIR
     from toolkit.plots.format import SAVE_FIGURE, save_figure
-    from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
 
     #################### Get session and probe ####################
-    session_dir = SessionDirectory(session_id, cache_lfp=True)
+    session_dir = SessionDirectory(session_id)
 
     probe_info = session_dir.load_probe_info()
     if not session_dir.has_lfp_data:  # Skip session if it has no LFP data
@@ -71,7 +70,7 @@ def analyze_csd(
 
     bands_ds = session_dir.load_wave_bands()
     preferred_orientation = session_dir.load_preferred_orientations().sel(
-        layer=GLOBAL_SETTINGS['layer_of_interest']).item()
+        layer=[GLOBAL_SETTINGS['layer_of_interest']]).values
 
     # load bands of interest
     bands_of_interest = xr.load_dataarray(RESULTS_DIR / f'bands_of_interest.nc')
@@ -80,88 +79,189 @@ def analyze_csd(
     wave_bands = bands_ds.wave_band.values
 
     csd_plot_kwargs = dict(
+        channel_positions=channel_positions,
         central_channels=central_channels,
         ccf_coordinates=lfp_channels['dorsal_ventral_ccf_coordinate']
     )
 
 
     #################### Analyze data and save figures ####################
-    # Figures directory
-    session_str = f"session_{session_id}"
+    csd_dss = {}
 
-    fig_dir = FIGURE_DIR / "CSD"
-    flashes_dir = fig_dir / "flashes"
-    drifting_gratings_dir = fig_dir / "drifting_gratings"
-    flashes_dir.mkdir(parents=True, exist_ok=True)
-    drifting_gratings_dir.mkdir(parents=True, exist_ok=True)
-
-
-    # Flashes CSD
+    # Flashes
     stim = 'flashes'
-    flashes_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-    flashes_blocks = st.get_stimulus_blocks(flashes_trials)
+    stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
+    stimulus_blocks = st.get_stimulus_blocks(stimulus_trials)
 
-    window = (flashes_window[0], flashes_trials.duration + flashes_window[1])
-    aligned_csd = st.align_trials_from_blocks(csd_array, flashes_blocks, window=window)[0]
+    window = (flashes_window[0], stimulus_trials.duration + flashes_window[1])
+    aligned_csd = st.align_trials_from_blocks(csd_array, stimulus_blocks, window=window, ignore_nan_trials='any')[0]
     average_csd = aligned_csd.mean(dim='presentation_id', keep_attrs=True)
     total_power = (aligned_csd ** 2).mean(dim=('presentation_id', 'time_from_presentation_onset'))
 
-    freq_bands = {}
+    freq_bands = []
     for wave_band in wave_bands:
         freq_band = ps.get_band_with_highest_peak(bands_ds.sel(stimulus=stim, wave_band=wave_band))
         if freq_band is not None:
-            freq_bands[wave_band] = freq_band.values
+            freq_bands.append(freq_band)
+    freq_bands = xr.concat(freq_bands, dim='wave_band')
 
-    aligned_csd_power = {}
-    for wave_band, freq_band in freq_bands.items():
-        csd_power = bandpass_power(ps.bandpass_filter_blocks(
-            csd_array, flashes_blocks, freq_band,
+    csd_power = {}
+    for wave_band in freq_bands.wave_band.values:
+        block_power = bandpass_power(ps.bandpass_filter_blocks(
+            csd_array, stimulus_blocks,
+            freq_bands.sel(wave_band=wave_band).values,
             extend_time=extend_time,
             include_filtered=False,
             include_amplitude=True
         ))
 
-        aligned_csd_power[wave_band] = st.align_trials_from_blocks(
-            csd_power, flashes_blocks, window=window
+        csd_power[wave_band] = st.align_trials_from_blocks(
+            block_power, stimulus_blocks, window=window
         )[0].mean(dim='presentation_id', keep_attrs=True)
+    csd_power = xr.concat(csd_power.values(), dim=pd.Index(csd_power, name='wave_band'))
 
-    # Average CSD
-    ax = plot_channel_signal_array(
-        average_csd.time_from_presentation_onset, channel_positions,
-        average_csd, clabel='CSD', **csd_plot_kwargs
-    )
-    ax.axvline(0, color='w')
-    ax.axvline(flashes_trials.duration, color='w')
-    ax.set_title(f'{stim} average CSD')
-
-    save_figure(flashes_dir, ax.get_figure(), name=f'{session_str}_average')
-
-    # CSD power
-    fig, axs = plt.subplots(len(freq_bands), 1, figsize=(6.4, 4.8 * len(freq_bands)),
-        sharex=True, squeeze=False)
-    for ax, (wave_band, csd_power) in zip(axs.ravel(), aligned_csd_power.items()):
-        plot_channel_signal_array(
-            csd_power.time_from_presentation_onset, channel_positions,
-            csd_power / total_power, clabel='Normalized CSD power', **csd_plot_kwargs, ax=ax
+    csd_dss['flashes'] = xr.Dataset(dict(
+            average=average_csd,
+            power=csd_power,
+            total_power=total_power,
+            bands=freq_bands,
+            is_band_of_interest=('wave_band', np.full(freq_bands.wave_band.size, False))
+        ),
+        attrs=average_csd.attrs | dict(
+            duration=stimulus_trials.duration,
+            gap_duration=stimulus_trials.gap_duration
         )
-        ax.axvline(0, color='w')
-        ax.axvline(flashes_trials.duration, color='w')
-        band = freq_bands[wave_band]
-        ax.set_title(f'{wave_band} ({band[0]:.1f} - {band[1]:.1f} Hz)')
-    fig.suptitle(f'{stim} CSD power')
-    fig.tight_layout()
+    )
 
-    save_figure(flashes_dir, fig, name=f'{session_str}_power')
-
-
-    # Drifting gratings CSD
+    # Drifting gratings
     stim = drifting_gratings_stimuli[0]  # first drifting grating stimulus
-    drifting_gratings_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-    drifting_gratings_blocks = st.get_stimulus_blocks(drifting_gratings_trials)
+    stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
+    stimulus_blocks = st.get_stimulus_blocks(stimulus_trials)
+    conditions = st.presentation_conditions(stimulus_trials.presentations)
 
-    window = (drifting_gratings_window[0], drifting_gratings_trials.duration + drifting_gratings_window[1])
-    aligned_csd = st.align_trials_from_blocks(csd_array, drifting_gratings_blocks, window=window)[0]
-    average_csd = aligned_csd.mean(dim='presentation_id', keep_attrs=True)
-    total_power = (aligned_csd ** 2).mean(dim=('presentation_id', 'time_from_presentation_onset'))
+    window = (drifting_gratings_window[0], stimulus_trials.duration + drifting_gratings_window[1])
+    aligned_csd, valid_trials = st.align_trials(
+        csd_array, stimulus_trials, window=window, ignore_nan_trials='any')
+
+    if valid_trials is not None:  # if any trial is dropped by NaN values
+        cond_presentation_id = st.presentation_conditions(valid_trials.presentations)[1]
+        if len(conditions[1]) != len(cond_presentation_id):
+            diff = set(conditions[1].keys()) - set(cond_presentation_id.keys())
+            raise ValueError(f"All trials are dropped by NaN values in {stim} for conditions: {diff}")
+        conditions = (conditions[0], cond_presentation_id)
+
+    # average across presentations of same condition, select conditions, average across conditions (and time)
+    average_csd = ps.filter_conditions(st.average_trials_with_conditions(aligned_csd, *conditions)) \
+        .sel(orientation=preferred_orientation).mean(dim=st.CONDITION_TYPES, keep_attrs=True)
+
+    total_power = ps.filter_conditions(st.average_trials_with_conditions(aligned_csd ** 2, *conditions)) \
+        .sel(orientation=preferred_orientation).mean(dim=(*st.CONDITION_TYPES, 'time_from_presentation_onset'))
+
+    freq_bands = []
+    is_band_of_interest = []
+    for wave_band in wave_bands:
+        # check if wave band is already extracted from layer of interest
+        is_band_of_interest_ = wave_band in bands_of_interest.wave_band and session_id in bands_of_interest.session_id
+        if is_band_of_interest_:
+            freq_band = bands_of_interest.sel(wave_band=wave_band, session_id=session_id)
+        else:  # fallback to extract from all layers
+            freq_band = ps.get_band_with_highest_peak(bands_ds.sel(stimulus=stim, wave_band=wave_band))
+        if freq_band is not None:
+            freq_bands.append(freq_band)
+            is_band_of_interest.append(is_band_of_interest_)
+    freq_bands = xr.concat(freq_bands, dim='wave_band', coords=['layer'])  # also concatenate coordinate 'layer'
+
+    csd_power = {}
+    for wave_band in freq_bands.wave_band.values:
+        block_power = bandpass_power(ps.bandpass_filter_blocks(
+            csd_array, stimulus_blocks,
+            freq_bands.sel(wave_band=wave_band).values,
+            extend_time=extend_time,
+            include_filtered=False,
+            include_amplitude=True
+        ))
+        block_power, _ = st.align_trials(
+            block_power, stimulus_trials if valid_trials is None else valid_trials,
+            window=window, ignore_nan_trials=''
+        )
+
+        csd_power[wave_band] = ps.filter_conditions(st.average_trials_with_conditions(block_power, *conditions)) \
+            .sel(orientation=preferred_orientation).mean(dim=st.CONDITION_TYPES, keep_attrs=True)
+    csd_power = xr.concat(csd_power.values(), dim=pd.Index(csd_power, name='wave_band'))
+
+    csd_dss['drifting_gratings'] = xr.Dataset(dict(
+            average=average_csd,
+            power=csd_power,
+            total_power=total_power,
+            bands=freq_bands,
+            is_band_of_interest=('wave_band', is_band_of_interest)
+        ),
+        attrs=average_csd.attrs | dict(
+            duration=stimulus_trials.duration,
+            gap_duration=stimulus_trials.gap_duration
+        )
+    )
 
 
+    #################### Save data ####################
+    session_dir.save_stimulus_csd(csd_dss)
+    
+
+    #################### Save figures ####################
+    if not SAVE_FIGURE:
+        return
+
+    fig_dir = FIGURE_DIR / "CSD"
+
+    session_str = f"session_{session_id}"
+
+    # Plot CSD
+    for stim, csd_ds in csd_dss.items():
+        stim_dir = fig_dir / stim
+        stim_dir.mkdir(parents=True, exist_ok=True)
+
+        # average CSD
+        fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+        plot_channel_signal_array(time=csd_ds.time_from_presentation_onset,
+            signal=csd_ds.average, clabel='CSD', **csd_plot_kwargs, ax=ax)
+        ax.axvline(0, color='w')
+        ax.axvline(csd_ds.attrs['duration'], color='w')
+        ax.set_title(f'{stim} average CSD')
+        fig.tight_layout()
+
+        save_figure(stim_dir, fig, name=f'{session_str}_average')
+
+        # CSD power
+        n_bands = csd_ds.wave_band.size
+        freq_bands = csd_ds.bands
+
+        fig, axs = plt.subplots(n_bands, 1, figsize=(6.4, 4.0 * n_bands), sharex=True, squeeze=False)
+        for ax, wave_band in zip(axs.ravel(), csd_ds.wave_band.values):
+            plot_channel_signal_array(
+                time=csd_ds.time_from_presentation_onset,
+                signal=csd_ds.power.sel(wave_band=wave_band) / csd_ds.total_power,
+                clabel='Normalized CSD power', **csd_plot_kwargs, ax=ax
+            )
+            ax.axvline(0, color='w')
+            ax.axvline(csd_ds.attrs['duration'], color='w')
+
+            # title info
+            band = csd_ds.bands.sel(wave_band=wave_band).values
+            layer = csd_ds.layer.sel(wave_band=wave_band).item()
+            of_interest = ' of interest' if csd_ds.is_band_of_interest.sel(wave_band=wave_band).item() else ''
+            ax.set_title(f'{wave_band} ({band[0]:.1f} - {band[1]:.1f} Hz in layer {layer}{of_interest})')
+        fig.suptitle(f'{stim} CSD power')
+        fig.tight_layout()
+
+        save_figure(stim_dir, fig, name=f'{session_str}_power')
+
+    plt.close('all')  # free memory
+
+
+if __name__ == "__main__":
+    from toolkit.pipeline.batch_process import BatchProcessArgumentParser, process_sessions
+
+    parser = BatchProcessArgumentParser(parameters=PARAMETERS)
+    args = parser.parse_args()
+
+    process_sessions(analyze_csd, **args)
