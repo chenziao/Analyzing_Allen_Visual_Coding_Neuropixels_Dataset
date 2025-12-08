@@ -3,6 +3,8 @@ import argparse
 import inspect
 import datetime
 import sys
+import os
+
 import contextlib
 import traceback
 from pathlib import Path
@@ -39,6 +41,13 @@ def parameters_from_dict(parameters_dict: dict[str, dict[str, Any]]) -> list[Par
     for name, kwargs in parameters_dict.items():
         parameters.append(Parameter(name, **kwargs))
     return parameters
+
+
+def split_sessions_for_array(sessions: list[int], array_index: int, array_total: int) -> list[int]:
+    """Split sessions into groups for SLURM array jobs."""
+    from numpy import array_split
+    splits = array_split(sessions, array_total)
+    return splits[array_index].tolist() if array_index < len(splits) else []
 
 
 class BatchProcessArgumentParser():
@@ -85,6 +94,16 @@ class BatchProcessArgumentParser():
             '--use_blacklist', action='store_true', default=False,
             help="Use sessions blacklist to exclude sessions to process."
         )
+        # SLURM array job support
+        parser.add_argument(
+            '--array_index', type=int, default=None,
+            help="SLURM array task index (0-based). Use with --array_total for parallel processing. "
+                "If SLURM_ARRAY_TASK_ID env var is set, it will be used automatically."
+        )
+        parser.add_argument(
+            '--array_total', type=int, default=None,
+            help="Total number of SLURM array tasks. Sessions will be split evenly across tasks."
+        )
         self.add_parameter_to_parser()
         parser.add_argument(
             '--disable_logging', action='store_true', default=False,
@@ -124,11 +143,22 @@ class BatchProcessArgumentParser():
         """Parse the arguments and return the dictionary of arguments for the `process_sessions()` function."""
         args = self.parser.parse_args()
         parameters = {key: getattr(args, key) for key in self.default_parameters.keys()}
+        
+        # Auto-detect SLURM array job from environment
+        array_index = args.array_index
+        array_total = args.array_total
+        if array_index is None and 'SLURM_ARRAY_TASK_ID' in os.environ:
+            array_index = int(os.environ['SLURM_ARRAY_TASK_ID'])
+        if array_total is None and 'SLURM_ARRAY_TASK_COUNT' in os.environ:
+            array_total = int(os.environ['SLURM_ARRAY_TASK_COUNT'])
+        
         arguments = dict(
             parameters=parameters,
             session_set=args.session_list if args.session_list else args.session_set,
             use_blacklist=args.use_blacklist,
-            disable_logging=args.disable_logging
+            disable_logging=args.disable_logging,
+            array_index=array_index,
+            array_total=array_total
         )
         return arguments
 
@@ -161,7 +191,15 @@ def get_timestamp(format: str = '%Y-%m-%d %H:%M:%S') -> str:
 
 
 def get_log_info(process_function: Callable) -> str:
-    """Get the log file for the process function with format <script_name>_<timestamp>"""
+    """Get the log file for the process function with format <script_name>_<timestamp>[_array<N>]
+    
+    Parameters
+    ----------
+    process_function : Callable
+        The process function to get the log info for.
+    array_suffix : str
+        Optional suffix for array job identification (e.g., "_array0").
+    """
     try:
         script_name = Path(inspect.getfile(process_function)).stem
     except TypeError:
@@ -169,13 +207,22 @@ def get_log_info(process_function: Callable) -> str:
     return script_name, get_timestamp("%Y%m%d_%H%M%S")
 
 
-def log_file_path(script_name: str, timestamp: str) -> Path:
+def log_file_path(script_name: str, suffix: str, array_job_id: str = None) -> Path:
+    """Get the path for a log file.
+    
+    For array jobs, logs are stored in a subdirectory named by SLURM_JOB_ID to 
+    avoid conflicts between different runs.
+    """
     batch_log_dir = paths.BATCH_LOG_DIR
+    if array_job_id:
+        batch_log_dir = batch_log_dir / f"{script_name}_job{array_job_id}"
     batch_log_dir.mkdir(parents=True, exist_ok=True)
-    return batch_log_dir / f"{script_name}_{timestamp}.log"
+    return batch_log_dir / f"{script_name}_{suffix}.log"
 
 
 def parameters_file_path(script_name: str, timestamp: str) -> Path:
+    """Get the path for the parameters JSON file."""
+    paths.BATCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
     return paths.BATCH_LOG_DIR / f"{script_name}_parameters_{timestamp}.json"
 
 
@@ -252,8 +299,9 @@ def print_to_file(file_path, tee_output=True, disable=False, **kwargs):
         print(f"Logging is disabled (not writing to file: {file_path})\n")
         yield None
     else:
+        kwargs = {'mode': 'w', **kwargs}  # Default to write mode
         print(f"Logging to file: {file_path}\n")
-        with open(file_path, 'w', **kwargs) as f:
+        with open(file_path, **kwargs) as f:
             with write_to_log(f, tee_output=tee_output):
                 yield f
 
@@ -263,67 +311,95 @@ def process_sessions(
     parameters: dict[str, Any],
     session_set: SessionSet | str | list[int],
     use_blacklist: bool = False,
-    disable_logging: bool = False
+    disable_logging: bool = False,
+    array_index: int = None,
+    array_total: int = None
 ):
-    """Process the sessions from the session set.
-
+    """Process sessions with the given function.
+    
+    Supports three execution modes:
+    - Local/single job: All sessions processed sequentially, single log file.
+    - SLURM array job: Sessions split across tasks, logs in job-specific directory.
+    
     Parameters
     ----------
-    process_function: Callable
-        The process function to execute for each session. The first argument must be the session ID.
-    parameters: dict[str, Any]
+    process_function : Callable
+        The process function to execute for each session. First argument must be session ID.
+    parameters : dict[str, Any]
         The dictionary of parameters to pass to the process function.
-    session_set: SessionSet | str | list[int]
-        The session set to process the sessions from.
-    use_blacklist: bool = False,
-        If True, the blacklist sessions will be excluded from the session set.
-    disable_logging: bool = False
-        If True, logging will not be written to the log file.
-
-    Returns
-    -------
-    None
+    session_set : SessionSet | str | list[int]
+        Session set to process (e.g., 'all', 'selected', or list of IDs).
+    use_blacklist : bool
+        If True, exclude blacklisted sessions.
+    disable_logging : bool
+        If True, don't write to log file.
+    array_index : int, optional
+        SLURM array task index (0-based). Auto-detected from environment.
+    array_total : int, optional
+        Total number of array tasks. Auto-detected from environment.
     """
     sessions, session_set = get_sessions(session_set)
     if use_blacklist:
         sessions, blacklist_sessions = filter_blacklist_sessions(sessions)
-    aborted_sessions = []
-
-    # Get log file and parameters file
+    
+    # Determine if running as array job
+    is_array_job = array_index is not None and array_total is not None
+    array_job_id = os.environ.get('SLURM_ARRAY_JOB_ID') if is_array_job else None
+    
+    # Sessions to process in this task
+    if is_array_job:
+        task_sessions = split_sessions_for_array(sessions, array_index, array_total)
+    else:
+        task_sessions = sessions
+    
+    # Setup logging paths
     script_name, timestamp = get_log_info(process_function)
-    log_file = log_file_path(script_name, timestamp)
-    parameters_file = parameters_file_path(script_name, timestamp)
+    combined_log_file = log_file_path(script_name, timestamp)
+    if is_array_job:
+        log_file = log_file_path(script_name,
+            suffix=f"{timestamp}_array{array_index}", array_job_id=array_job_id)
+    else:
+        log_file = combined_log_file
 
-    # Write to log file
-    with print_to_file(log_file, encoding='utf-8', disable=disable_logging) as f:
-        # Function and arguments 
-        print(f"Process script: {script_name}")
-        print(f"Process function: {process_function.__name__}")
-        print("Parameters:")
-        for key, value in parameters.items():
-            print(f"  {key}: {value}")
-
-        # Session set and session ids
-        print(f"\nProcessing session set: {session_set.name}")
-        print("Session IDs:")
-        for session in sessions:
-            print(f"  {session}")
-
-        if use_blacklist:
-            print("\nBlacklisted sessions:")
-            for session in blacklist_sessions:
-                print(f"  {session}")
-
-        # Write parameters to file
-        with open(parameters_file, 'w', encoding='utf-8') as pf:
+    # For first task of array job or non-array job
+    if not is_array_job or array_index == 0:
+        # Save parameters
+        params_file = parameters_file_path(script_name, timestamp)
+        with open(params_file, 'w', encoding='utf-8') as pf:
             json.dump(parameters, pf, indent=4)
 
+        # Write header to combined log file 
+        with print_to_file(combined_log_file, encoding='utf-8', disable=disable_logging) as f:
+            # Function and arguments 
+            print(f"Process script: {script_name}")
+            print(f"Process function: {process_function.__name__}")
+            print("Parameters:")
+            for key, value in parameters.items():
+                print(f"  {key}: {value}")
+
+            # Session set and session ids
+            print(f"\nProcessing session set: {session_set.name}")
+            print("Session IDs:")
+            for session in sessions:
+                print(f"  {session}")
+
+            if use_blacklist:
+                print("\nBlacklisted sessions:")
+                for session in blacklist_sessions:
+                    print(f"  {session}")
+
+    # Write processing log
+    aborted_sessions = []
+    mode = 'w' if is_array_job else 'a'  # Append to combined file for non-array job
+    with print_to_file(log_file, encoding='utf-8', disable=disable_logging, mode=mode) as f:
         # Start processing
+        if is_array_job:
+            print(f"Array task {array_index + 1}/{array_total}")
         print(f"\n\nProcessing started at {get_timestamp()}")
         print("\n" + "=" * 80 + "\n")
 
         # Main processing loop
-        for session in sessions:
+        for session in task_sessions:
             print(f"\nProcessing session: {session} at {get_timestamp()}")
             print("-" * 80 + "\n")
             try:
@@ -342,10 +418,91 @@ def process_sessions(
         print("\n" + "=" * 80)
         print(f"\nProcessing completed at {get_timestamp()}")
 
-        # Print aborted sessions
-        print(f"\nNumber of successfully processed sessions: {len(sessions) - len(aborted_sessions)}")
+        # Print task summary
+        n_success = len(task_sessions) - len(aborted_sessions)
+        print(f"\nNumber of successfully processed sessions: {n_success}/{len(task_sessions)}")
         if aborted_sessions:
-            print(f"Number of aborted sessions: {len(aborted_sessions)}")
-            print("\nAborted sessions:")
-            for session in aborted_sessions:
-                print(f"  {session}")
+            print(f"Aborted sessions: {' '.join(map(str, aborted_sessions))}")
+
+
+def combine_array_logs(job_dir: str | Path, delete: bool = True) -> Path | None:
+    """Combine array job log files into the combined log file (which already has the header).
+    
+    Appends individual task logs to the header file and aggregates aborted sessions
+    from all tasks as a summary at the end.
+    
+    Parameters
+    ----------
+    job_dir : str | Path
+        Path to the array job log directory (e.g., "find_probe_channels_job12345").
+        Can be absolute path or relative to BATCH_LOG_DIR.
+    delete : bool
+        If True, delete the job directory after combining.
+        
+    Returns
+    -------
+    Path | None
+        Path to the combined log file, or None if no files found.
+    """
+    import re
+    import shutil
+    
+    job_dir = Path(job_dir)
+    if not job_dir.is_absolute():
+        job_dir = paths.BATCH_LOG_DIR / job_dir
+    
+    if not job_dir.is_dir():
+        print(f"Directory not found: {job_dir}")
+        return None
+    
+    log_files = sorted(job_dir.glob("*.log"))
+    if not log_files:
+        print(f"No log files in: {job_dir}")
+        return None
+    
+    # Output file: header file already exists (scriptname_timestamp.log)
+    output_name = log_files[0].stem.rsplit("_array", 1)[0] + ".log"
+    output_path = paths.BATCH_LOG_DIR / output_name
+    
+    # Parse aborted sessions from each task log
+    all_aborted = []
+    total_success = 0
+    total_sessions = 0
+    aborted_pattern = re.compile(r"Aborted sessions: (.+)")
+    success_pattern = re.compile(r"Number of successfully processed sessions: (\d+)/(\d+)")
+    
+    with open(output_path, 'a', encoding='utf-8') as out:
+        for f in log_files:
+            content = f.read_text(encoding='utf-8')
+            out.write(f"\n{'#' * 30} {f.name} {'#' * 30}\n\n")
+            out.write(content)
+            
+            # Extract aborted sessions (space-separated)
+            match = aborted_pattern.search(content)
+            if match and match.group(1):
+                aborted_ids = [int(x) for x in match.group(1).split()]
+                all_aborted.extend(aborted_ids)
+            
+            # Extract success counts
+            match = success_pattern.search(content)
+            if match:
+                total_success += int(match.group(1))
+                total_sessions += int(match.group(2))
+        
+        # Write aggregated summary
+        out.write(f"\n\n{'=' * 80}\n")
+        out.write(f"BATCH SUMMARY\n")
+        out.write(f"{'=' * 80}\n")
+        out.write(f"Total sessions processed: {total_sessions}\n")
+        out.write(f"Total successful: {total_success}\n")
+        out.write(f"Total aborted: {len(all_aborted)}\n")
+        if all_aborted:
+            out.write(f"All aborted sessions: {' '.join(map(str, all_aborted))}\n")
+    
+    print(f"Combined {len(log_files)} files -> {output_path}")
+    
+    if delete:
+        shutil.rmtree(job_dir)
+        print(f"Deleted: {job_dir}")
+    
+    return output_path
