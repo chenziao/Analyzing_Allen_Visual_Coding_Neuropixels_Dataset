@@ -9,8 +9,8 @@
 #   sbatch batch_run_script.sh
 #
 # Output:
-#   - Log file: output/batch_logs/find_probe_channels_YYYYMMDD_HHMMSS.log
-#   - SLURM output: stdout/run_<JOB_ID>.out
+#   - Log file: output/batch_logs/<script>_YYYYMMDD_HHMMSS.log
+#   - SLURM output: stdout/run_script<JOB_ID>.out
 # ==============================================================================
 
 #SBATCH -J analyze_allen_visual_coding_script
@@ -24,10 +24,12 @@
 
 mkdir -p stdout
 
-echo "Single job started at $(date)"
+START=$(date)
 echo "Processing all sessions sequentially..."
 
 unset DISPLAY
 python scripts/find_probe_channels.py --session_set all
 
-echo "Finished running at $(date)."
+END=$(date)
+echo "Single job started at $START"
+echo "Single job finished at $END"

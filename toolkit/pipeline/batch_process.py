@@ -144,7 +144,7 @@ class BatchProcessArgumentParser():
         args = self.parser.parse_args()
         parameters = {key: getattr(args, key) for key in self.default_parameters.keys()}
         
-        # Auto-detect SLURM array job from environment
+        # Auto-detect SLURM array job from environment variables if not provided
         array_index = args.array_index
         array_total = args.array_total
         if array_index is None and 'SLURM_ARRAY_TASK_ID' in os.environ:
