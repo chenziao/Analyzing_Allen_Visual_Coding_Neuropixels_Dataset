@@ -388,6 +388,8 @@ def process_sessions(
                 for session in blacklist_sessions:
                     print(f"  {session}")
 
+            print("\n" + "*" * 80 + "\n")
+
     # Write processing log
     aborted_sessions = []
     mode = 'w' if is_array_job else 'a'  # Append to combined file for non-array job
@@ -395,7 +397,7 @@ def process_sessions(
         # Start processing
         if is_array_job:
             print(f"Array task {array_index + 1}/{array_total}")
-        print(f"\n\nProcessing started at {get_timestamp()}")
+        print(f"\nProcessing started at {get_timestamp()}")
         print("\n" + "=" * 80 + "\n")
 
         # Main processing loop

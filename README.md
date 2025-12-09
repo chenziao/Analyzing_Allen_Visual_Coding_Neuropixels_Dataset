@@ -60,6 +60,15 @@ pip install -r requirements.txt
 
 - Run the batch script `sbatch batch_run_script.sh` to process the sessions.
 
+#### Parallel Processing with SLURM Array Jobs
+
+For large workloads, use [submit_array_job.sh](submit_array_job.sh) to split sessions across parallel tasks:
+
+1. Edit the configuration variables at the top of the script (`NUM_TASKS`, `SCRIPT_PATH`, `SCRIPT_ARGS`)
+2. Run `bash submit_array_job.sh`
+
+The script automatically splits sessions, runs tasks in parallel, and combines logs after completion.
+
 ### Scripts (for batch processing)
 
 - After a script finishes running, check the `batch_logs` folder (see `batch_log_dir` in [path_config.json](path_config.json)) for the logs of printed messages and errors. The parameters used for the script are saved in `.json` files in the `batch_logs` folder.
@@ -74,6 +83,14 @@ pip install -r requirements.txt
     - `--session_list`: List of session IDs to process (space-separated). `--session_set` argument will be ignored if this is provided.
     - `--use_blacklist`: Use sessions blacklist to exclude sessions to process to avoid uncaught errors in some sessions that may cause the batch processing to stall. The blacklist is listed in `'blacklist'` key of [sessions.json](sessions.json).
     - `--disable_logging`: Disable logging to the log file.
+    - `--array_index`: SLURM array task index (0-based). Auto-detected from environment if not provided.
+    - `--array_total`: Total number of array tasks. Auto-detected from environment if not provided.
+
+#### Utility Scripts
+
+- [combine_array_logs.py](scripts/combine_array_logs.py): Combine array job log files into a single file. Called automatically by array job submission.
+
+- [test_batch_logging.py](scripts/test_batch_logging.py): Test script for batch processing and logging system.
 
 #### Scripts (execute in order, later scripts may depend on the results of previous scripts)
 

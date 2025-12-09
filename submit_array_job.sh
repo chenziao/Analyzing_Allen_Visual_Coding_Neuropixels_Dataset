@@ -6,7 +6,7 @@
 # Automatically combines logs after all tasks complete.
 #
 # Usage: Edit the configuration below, then run:
-#   ./submit_array_job.sh
+#   bash submit_array_job.sh
 #
 # Output:
 #   - Combined log: output/batch_logs/<script>_YYYYMMDD_HHMMSS.log
