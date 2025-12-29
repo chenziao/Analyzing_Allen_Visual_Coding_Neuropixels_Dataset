@@ -121,14 +121,23 @@ def find_units_and_optotag(
     sel_units = pd_merge_differences(sel_units, units_lfp_channels, left_index=True, right_index=True, how='left')
 
     # Get optotagging info
-    opto_epochs = session.optogenetic_stimulation_epochs
-    # get trials with duration 10 ms (a single square pulse)
-    trials = opto_epochs[(opto_epochs.duration > 0.009) & (opto_epochs.duration < 0.02)]
-    window = (min(baseline_window[0], evoked_window[0]), max(baseline_window[1], evoked_window[1]))
-    spike_rate = optotagging_spike_rate(session.spike_times, trials, sel_units.index, bin_width=bin_width, window=window)
+    try:
+        opto_epochs = session.optogenetic_stimulation_epochs
+    except Exception as e:
+        print(f"Error getting `session.optogenetic_stimulation_epochs`: {e}")
+        spike_rate = None
+    else:
+        # get trials with duration 10 ms (a single square pulse)
+        trials = opto_epochs[(opto_epochs.duration > 0.009) & (opto_epochs.duration < 0.02)]
+        window = (min(baseline_window[0], evoked_window[0]), max(baseline_window[1], evoked_window[1]))
+        spike_rate = optotagging_spike_rate(session.spike_times, trials, sel_units.index, bin_width=bin_width, window=window)
 
     # Calculate evoked rate and perform significance t-test
-    evoke_df = evoke_rate_test(spike_rate, baseline_window, evoked_window)
+    if spike_rate is None:  # no opto stimulation data, fill with NaN
+        evoke_df = pd.DataFrame(np.nan, index=sel_units.index,
+            columns=['opto_baseline_rate', 'opto_evoked_rate', 'opto_t_stat', 'opto_p_value'])
+    else:
+        evoke_df = evoke_rate_test(spike_rate, baseline_window, evoked_window)
     evoke_df['genotype'] = session_dir.genotype
     sel_units = pd_merge_differences(sel_units, evoke_df, left_index=True, right_index=True, how='left')
 
