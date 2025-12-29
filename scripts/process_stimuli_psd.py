@@ -31,7 +31,7 @@ def process_stimuli_psd(
     group_width: int = 1,
     psd_tseg: float = 0.5,
     df: float = 1.0,
-):
+) -> None:
     import pandas as pd
     import xarray as xr
     import toolkit.allen_helpers.stimuli as st

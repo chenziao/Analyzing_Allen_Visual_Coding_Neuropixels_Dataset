@@ -59,6 +59,7 @@ class SessionDirectory:
             Whether the probe has LFP data.
         """
         self.session_id = session_id
+        self.structure_acronym = structure_acronym
         self._session_dir = PROCESSED_DATA_CACHE_DIR / structure_acronym / str(session_id)
         self.cache : EcephysProjectCache = EcephysProjectCache.from_warehouse(manifest=ECEPHYS_MANIFEST_FILE)
         self._session : EcephysSession | None = None
@@ -98,6 +99,12 @@ class SessionDirectory:
         if self._session is None:
             self._session : EcephysSession = self.cache.get_session_data(self.session_id)
         return self._session
+
+    @property
+    def genotype(self) -> str:
+        """Return the abbreviated genotype: 'Pvalb', 'Sst', 'Vip', 'wt'"""
+        from ..allen_helpers.units import get_genotype
+        return get_genotype(self.session.full_genotype)
 
     # Probe info
     @property
@@ -460,6 +467,17 @@ class SessionDirectory:
         stimulus_names = [f.stem.removesuffix('_csd') for f in csd_files]
         csd_dss = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, csd_files)}
         return csd_dss
+
+    # Units information
+    @property
+    def units_info(self) -> Path:
+        return self.session_dir / 'units_info.csv'
+
+    def save_units_info(self, units_info : pd.DataFrame) -> None:
+        units_info.to_csv(self.units_info)
+
+    def load_units_info(self) -> pd.DataFrame:
+        return pd.read_csv(self.units_info, index_col='unit_id')
 
 
 # Output directory

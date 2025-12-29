@@ -76,7 +76,7 @@ def analyze_psd_fooof(
     top_n_peaks: int,
     bandwidth_n_sigma: float,
     condition_wave_band: str
-):
+) -> None:
     import xarray as xr
     import matplotlib.pyplot as plt
 

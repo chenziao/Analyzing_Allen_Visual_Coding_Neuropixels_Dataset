@@ -32,7 +32,7 @@ def analyze_csd(
     extend_time: float,
     flashes_window: list[float, float],
     drifting_gratings_window: list[float, float],
-):
+) -> None:
     import numpy as np
     import pandas as pd
     import xarray as xr

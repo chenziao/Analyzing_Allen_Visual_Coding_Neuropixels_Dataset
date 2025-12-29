@@ -39,7 +39,7 @@ def test_process(
     error_rate: float = 0.2,
     message: str = "Hello from test script",
     verbose: bool = True
-):
+) -> None:
     """Test process function that simulates work and may raise errors."""
     
     print(f"Processing session {session_id}...")

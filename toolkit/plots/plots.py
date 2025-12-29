@@ -441,3 +441,65 @@ def plot_layer_condition_band_power(
         ax.set_title(title)
     fig.tight_layout()
     return fig, axs
+
+
+def plot_optotag_units(
+    optotag_df : pd.DataFrame,
+    evoked_ratio_threshold : float | None = None,
+    ttest_alpha : float | None = None,
+    spike_width_range : tuple[float, float] | None = None,
+    marker_size : float = 3,
+    ax : Axes | None = None
+):
+    """Plot scatter plot of optotag units with evoked ratio and spike width thresholds
+    
+    Parameters
+    ----------
+    optotag_df : pd.DataFrame
+        Dataframe containing the units information and optotagging results.
+    evoked_ratio_threshold : float | None
+        Threshold for evoked ratio. If None, no threshold is applied.
+    ttest_alpha : float | None
+        Alpha for t-test. If None, no t-test is performed.
+    spike_width_range : tuple[float, float] | None
+        Range for spike width. If None, no spike width range limit is applied.
+    marker_size : float
+        Marker size.
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+        
+    Returns
+    -------
+    ax : Axes
+        Axes object with the plot.
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+    if ttest_alpha is None:
+        ttest_alpha = 0.5
+    if spike_width_range is None:
+        spike_width_range = (0., np.inf)
+    alpha_size = -marker_size * np.log2(ttest_alpha)
+    if 'opto_p_value' in optotag_df.columns:
+        marker_sizes = marker_size * np.clip(-np.log2(optotag_df['opto_p_value']), 1, 30)
+    else:
+        marker_sizes = alpha_size
+    positive_units = optotag_df['optotag_positive']
+    colors = np.array(['b', 'r'])[positive_units.astype(int)]
+
+    ax.scatter(optotag_df['waveform_duration'], optotag_df['evoked_ratio'],
+               s=marker_sizes, marker='o', edgecolors=colors, facecolors='none')
+    if evoked_ratio_threshold is not None:
+        ax.axhline(evoked_ratio_threshold, linestyle=':', color='r', label='evoked ratio threshold')
+    if spike_width_range[0] > 0:
+        ax.axvline(spike_width_range[0], linestyle=':', color='g', label='spike width lower bound')
+    if spike_width_range[1] < np.inf:
+        ax.axvline(spike_width_range[1], linestyle=':', color='orange', label='spike width upper bound')
+    ax.scatter([], [], s=alpha_size, marker='o', edgecolors='r', facecolors='none',
+        label=f'positive units (n={positive_units.sum():d})')
+    ax.scatter([], [], s=alpha_size, marker='o', edgecolors='b', facecolors='none',
+        label=f't-test alpha level: {ttest_alpha:.2f}\nmarker size indicates p-value')
+    ax.set_xlabel('Waveform duration (ms)')
+    ax.set_ylabel('Evoked ratio')
+    ax.legend(loc='upper right', framealpha=0.2)
+    return ax

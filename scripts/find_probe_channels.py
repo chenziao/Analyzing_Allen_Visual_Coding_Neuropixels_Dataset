@@ -45,7 +45,7 @@ def find_probe_channels(
     cache_data_only: bool = False,
     skip_compute_csd: bool = False,
     timeout: int = 1800
-):
+) -> None:
     import numpy as np
     from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
@@ -55,7 +55,6 @@ def find_probe_channels(
     from toolkit.allen_helpers.location import fill_missing_linear_channels, StructureFinder, central_channel_in_structure
     from toolkit.analysis.signal import compute_csd
     from toolkit.pipeline.data_io import SessionDirectory
-
     from toolkit.utils.timeout_handler import run_with_timeout
 
     #################### Get session and probe ####################
