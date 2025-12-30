@@ -488,6 +488,7 @@ class SessionSet(Enum):
     SELECTED = 'selected'
     UNSELECTED = 'unselected'
     OPTOTAG = 'optotag'
+    SELECTED_OPTOTAG = 'selected_optotag'
     CUSTOM = 'custom'
 
 
@@ -542,7 +543,14 @@ def get_sessions(session_set : SessionSet | str | list[int]) -> tuple[list[int],
             sessions = sessions_df.index[idx].to_list()
 
         case SessionSet.OPTOTAG:
-            raise NotImplementedError("Optotag sessions are not implemented yet")
+            # Get optotagged sessions from the optotagged sessions file
+            optotagged_sessions_df = get_optotagged_sessions()
+            sessions = optotagged_sessions_df.index.to_list()
+
+        case SessionSet.SELECTED_OPTOTAG:
+            # Get selected optotagged sessions from the optotagged sessions file
+            optotagged_sessions_df = get_optotagged_sessions()
+            sessions = optotagged_sessions_df.index[optotagged_sessions_df['selected']].to_list()
 
         case SessionSet.CUSTOM:
             raise ValueError("Custom sessions need to be provided as a list of session IDs")
@@ -627,6 +635,32 @@ def get_existing_sessions(
         print("Sessions missing from the data cache directory:")
         print('\n'.join(map(str, missing_sessions)))
     return session_list, missing_sessions
+
+
+def save_optotagged_sessions(
+    optotagged_sessions : pd.DataFrame,
+    structure_acronym : str = STRUCTURE_ACRONYM,
+    session_selection : pd.DataFrame | None = None
+) -> None:
+    from toolkit.utils.misc import pd_merge_differences
+    if session_selection is None:
+        session_selection = get_session_selection(structure_acronym)
+    optotagged_sessions = pd_merge_differences(session_selection, optotagged_sessions,
+        left_index=True, right_index=True, how='right')
+    optotagged_sessions.index.name = session_selection.index.name
+    file = RESULTS_DIR / "optotagged_sessions.csv"
+    file.parent.mkdir(parents=True, exist_ok=True)
+    optotagged_sessions.to_csv(file)
+
+
+def get_optotagged_sessions() -> pd.DataFrame:
+    file = RESULTS_DIR / "optotagged_sessions.csv"
+    if file.exists():
+        optotagged_sessions = pd.read_csv(file, index_col='id')
+    else:
+        raise FileNotFoundError(f"Optotagged sessions file '{file}' does not exist. "
+            "Please run `notebooks/compile_optotag.ipynb` to create it.")
+    return optotagged_sessions
 
 
 def format_for_path(path : str) -> str:

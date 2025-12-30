@@ -74,7 +74,7 @@ def find_units_and_optotag(
     from functools import lru_cache
     from toolkit.pipeline.data_io import SessionDirectory
     from toolkit.utils.misc import pd_merge_differences
-    from toolkit.pipeline.units import evoke_rate_test
+    from toolkit.pipeline.units import evoke_rate_test, OPTO_EVOKE_KEYS
 
     #################### Get session and probe ####################
     session_dir = SessionDirectory(session_id)
@@ -134,8 +134,7 @@ def find_units_and_optotag(
 
     # Calculate evoked rate and perform significance t-test
     if spike_rate is None:  # no opto stimulation data, fill with NaN
-        evoke_df = pd.DataFrame(np.nan, index=sel_units.index,
-            columns=['opto_baseline_rate', 'opto_evoked_rate', 'opto_t_stat', 'opto_p_value'])
+        evoke_df = pd.DataFrame(np.nan, index=sel_units.index, columns=OPTO_EVOKE_KEYS)
     else:
         evoke_df = evoke_rate_test(spike_rate, baseline_window, evoked_window)
     evoke_df['genotype'] = session_dir.genotype

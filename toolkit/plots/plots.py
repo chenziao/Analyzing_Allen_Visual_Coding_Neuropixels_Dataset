@@ -443,6 +443,41 @@ def plot_layer_condition_band_power(
     return fig, axs
 
 
+def plot_optotag_evoke_ratio(
+    optotag_df : pd.DataFrame,
+    min_rate : float = 1.,
+    evoked_ratio_threshold : float | None = None,
+    ax : Axes | None = None
+):
+    log_gap = 2 ** 0.5  # gap for log scale plot axis limit
+    max_rate = max(optotag_df['opto_evoked_rate'].max(), optotag_df['opto_baseline_rate'].max()) + min_rate
+    rate_limit = np.array([min_rate / log_gap, max_rate * log_gap])
+    baseline_rate_adjusted = optotag_df['opto_baseline_rate'] + min_rate
+    evoked_rate_adjusted = optotag_df['opto_evoked_rate'] + min_rate
+    evoke_significant = optotag_df['evoke_significant'].values
+    n_units = len(optotag_df)
+    n_sig = sum(evoke_significant)
+
+    _, ax = plt.subplots(1, 1)
+    if evoked_ratio_threshold is not None:
+        n_pos = sum(optotag_df['evoke_positive'])
+        ax.plot(rate_limit, rate_limit * evoked_ratio_threshold, '--r',
+            label=f'Evoked ratio threshold: {evoked_ratio_threshold:g}\nPositive units: {n_pos:d} / {n_units:d}')
+    ax.plot(rate_limit, rate_limit, '--k', label='Identity line')
+    ax.plot(baseline_rate_adjusted[~evoke_significant], evoked_rate_adjusted[~evoke_significant],
+        color='b', linestyle='none', marker='.')
+    ax.plot(baseline_rate_adjusted[evoke_significant], evoked_rate_adjusted[evoke_significant],
+        color='b', linestyle='none', marker='o', markerfacecolor='none', label=f'Significant units: {n_sig:d} / {n_units:d}')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlim(rate_limit)
+    ax.set_ylim(rate_limit)
+    ax.set_xlabel('Baseline rate (Hz)')
+    ax.set_ylabel('Evoked rate (Hz)')
+    ax.legend(loc='lower right', framealpha=0.2)
+    return ax
+
+
 def plot_optotag_units(
     optotag_df : pd.DataFrame,
     evoked_ratio_threshold : float | None = None,
@@ -474,7 +509,7 @@ def plot_optotag_units(
         Axes object with the plot.
     """
     if ax is None:
-        _, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+        _, ax = plt.subplots(1, 1)
     if ttest_alpha is None:
         ttest_alpha = 0.5
     if spike_width_range is None:
@@ -499,6 +534,7 @@ def plot_optotag_units(
         label=f'positive units (n={positive_units.sum():d})')
     ax.scatter([], [], s=alpha_size, marker='o', edgecolors='b', facecolors='none',
         label=f't-test alpha level: {ttest_alpha:.2f}\nmarker size indicates p-value')
+    ax.set_yscale('log')
     ax.set_xlabel('Waveform duration (ms)')
     ax.set_ylabel('Evoked ratio')
     ax.legend(loc='upper right', framealpha=0.2)

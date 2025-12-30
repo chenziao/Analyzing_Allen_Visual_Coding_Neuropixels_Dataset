@@ -4,6 +4,8 @@ import xarray as xr
 from scipy.stats import ttest_rel
 
 
+OPTO_EVOKE_KEYS = ['opto_baseline_rate', 'opto_evoked_rate', 'opto_t_stat', 'opto_p_value']
+
 def evoke_rate_test(
     spike_rate : xr.DataArray,
     baseline_window : tuple[float, float],
