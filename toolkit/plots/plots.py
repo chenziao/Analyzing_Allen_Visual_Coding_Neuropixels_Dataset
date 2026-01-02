@@ -462,12 +462,14 @@ def plot_optotag_evoke_ratio(
     if evoked_ratio_threshold is not None:
         n_pos = sum(optotag_df['evoke_positive'])
         ax.plot(rate_limit, rate_limit * evoked_ratio_threshold, '--r',
-            label=f'Evoked ratio threshold: {evoked_ratio_threshold:g}\nPositive units: {n_pos:d} / {n_units:d}')
+            label=f"Evoked ratio threshold: {evoked_ratio_threshold:g}\n"
+            f"Positive units: {n_pos:d}/{n_units:d}, {100 * n_pos / n_units:.1f}%")
     ax.plot(rate_limit, rate_limit, '--k', label='Identity line')
     ax.plot(baseline_rate_adjusted[~evoke_significant], evoked_rate_adjusted[~evoke_significant],
         color='b', linestyle='none', marker='.')
     ax.plot(baseline_rate_adjusted[evoke_significant], evoked_rate_adjusted[evoke_significant],
-        color='b', linestyle='none', marker='o', markerfacecolor='none', label=f'Significant units: {n_sig:d} / {n_units:d}')
+        color='b', linestyle='none', marker='o', markerfacecolor='none',
+        label=f"Significant units: {n_sig:d}/{n_units:d}, {100 * n_sig / n_units:.1f}%")
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlim(rate_limit)
@@ -520,6 +522,7 @@ def plot_optotag_units(
     else:
         marker_sizes = alpha_size
     positive_units = optotag_df['optotag_positive']
+    n_pos = positive_units.sum()
     colors = np.array(['b', 'r'])[positive_units.astype(int)]
 
     ax.scatter(optotag_df['waveform_duration'], optotag_df['evoked_ratio'],
@@ -531,7 +534,7 @@ def plot_optotag_units(
     if spike_width_range[1] < np.inf:
         ax.axvline(spike_width_range[1], linestyle=':', color='orange', label='spike width upper bound')
     ax.scatter([], [], s=alpha_size, marker='o', edgecolors='r', facecolors='none',
-        label=f'positive units (n={positive_units.sum():d})')
+        label=f'positive units (n={n_pos:d}, {100 * n_pos / len(positive_units):.1f}%)')
     ax.scatter([], [], s=alpha_size, marker='o', edgecolors='b', facecolors='none',
         label=f't-test alpha level: {ttest_alpha:.2f}\nmarker size indicates p-value')
     ax.set_yscale('log')

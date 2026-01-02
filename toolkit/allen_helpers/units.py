@@ -1,4 +1,4 @@
-GENOTYPES = {'Pvalb', 'Sst', 'Vip', 'wt'}
+GENOTYPES = ['Pvalb', 'Sst', 'Vip', 'wt']
 OPTO_GENOTYPES = ['Pvalb', 'Sst']
 
 
