@@ -480,6 +480,98 @@ class SessionDirectory:
         return pd.read_csv(self.units_info, index_col='unit_id')
 
 
+# File paths for non-session-specific files
+
+class Files:
+    """Dictionary of output file paths. Accessible as attributes or dictionary items."""
+    _files = dict(
+        session_selection=RESULTS_DIR / 'session_selection.csv',
+        optotagged_sessions=RESULTS_DIR / 'optotagged_sessions.csv',
+        bands_of_interest=RESULTS_DIR / 'bands_of_interest.nc',
+        all_units_info=RESULTS_DIR / 'all_units_info.csv',
+    )
+
+    _index_col = dict(
+        session_selection='id',
+        optotagged_sessions='id',
+        all_units_info='unit_id',
+        layer_portion_boundary='layer',
+    )
+
+    _xarray_datatype = dict(
+        bands_of_interest='dataarray',
+        average_wave_bands='dataset',
+    )
+
+    # Helper methods
+    def __getitem__(self, name: str) -> Path:
+        """Get file path as dictionary item."""
+        file = self._files.get(name, None)
+        if file is None:
+            raise AttributeError(f"File '{name}' is not defined.")
+        return file
+
+    def __getattr__(self, name: str) -> Path:
+        """Get file path as attribute."""
+        return self[name]
+
+    def load(self, name: str, *args, **kwargs) -> pd.DataFrame | xr.Dataset:
+        """Load data from a file.
+        
+        Parameters
+        ----------
+        name : str
+            Name of the file to load.
+        *args, **kwargs :
+            Arguments to pass to the function for the file path with arguments.
+
+        Returns
+        -------
+        data : pd.DataFrame | xr.Dataset
+            Data from the file.
+        """
+        if len(args) > 0 or len(kwargs) > 0:
+            file = getattr(self, name)(*args, **kwargs)
+        else:
+            try:
+                file = self[name]
+            except AttributeError:  # not in dictionary, try to get as method
+                file = getattr(self, name)()  # using default arguments
+        if not file.exists():
+            raise FileNotFoundError(f"File '{file}' does not exist.")
+        file_type = file.suffix.lstrip('.')
+        match file_type:
+            case 'csv':
+                index_col=self._index_col.get(name)
+                data =  pd.read_csv(file, index_col=index_col)
+            case 'nc':
+                datatype = self._xarray_datatype.get(name, 'dataset')
+                data = getattr(xr, f'load_{datatype}')(file)
+            case _:
+                raise ValueError(f"Unsupported file type: '{file_type}'")
+        return data
+
+    def _data_dir(self, structure_acronym: str | None = None) -> Path:
+        if structure_acronym is None:
+            structure_acronym = STRUCTURE_ACRONYM
+        return PROCESSED_DATA_CACHE_DIR / structure_acronym
+
+    # File paths with arguments
+    def layer_portion_boundary(self, structure_acronym: str | None = None) -> Path:
+        return self._data_dir(structure_acronym) / 'layer_portion_boundary.csv'
+
+    def wave_bands(self, session_type : str) -> Path:
+        return RESULTS_DIR / f'wave_bands_{session_type}.csv'
+
+    def average_wave_bands(self,
+        session_type: str, session_set: str,
+        structure_acronym: str | None = None
+    ) -> Path:
+        return self._data_dir(structure_acronym) / f'average_wave_bands_{session_type}_{session_set}.nc'
+
+FILES = Files()  # Create instance of Files
+
+
 # Output directory
 
 class SessionSet(Enum):
@@ -571,10 +663,9 @@ def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.Dat
     pd.DataFrame
         Session selection dataframe. Create one if not exists.
     """
-    file = RESULTS_DIR / "session_selection.csv"
-
+    file = FILES.session_selection
     if file.exists():
-        sessions_df = pd.read_csv(file, index_col='id')
+        sessions_df = FILES.load('session_selection')
     else:
         file.parent.mkdir(parents=True, exist_ok=True)
         sessions_df = initialize_session_selection(structure_acronym)
@@ -648,18 +739,16 @@ def save_optotagged_sessions(
     optotagged_sessions = pd_merge_differences(session_selection, optotagged_sessions,
         left_index=True, right_index=True, how='right')
     optotagged_sessions.index.name = session_selection.index.name
-    file = RESULTS_DIR / "optotagged_sessions.csv"
+    file = FILES.optotagged_sessions
     file.parent.mkdir(parents=True, exist_ok=True)
     optotagged_sessions.to_csv(file)
 
 
 def get_optotagged_sessions() -> pd.DataFrame:
-    file = RESULTS_DIR / "optotagged_sessions.csv"
-    if file.exists():
-        optotagged_sessions = pd.read_csv(file, index_col='id')
-    else:
-        raise FileNotFoundError(f"Optotagged sessions file '{file}' does not exist. "
-            "Please run `notebooks/compile_optotag.ipynb` to create it.")
+    try:
+        optotagged_sessions = FILES.load('optotagged_sessions')
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"{e}\nPlease run `notebooks/compile_optotag.ipynb` to create it.")
     return optotagged_sessions
 
 

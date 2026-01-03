@@ -95,7 +95,7 @@ def detect_optotag(
     if spike_width_range is None:
         optotag_df['valid_spike_width'] = True
     else:
-        optotag_df['valid_spike_width'] = (optotag_df['waveform_duration'] >= spike_width_range[0]) \
+        optotag_df['valid_spike_width'] = (optotag_df['waveform_duration'] > spike_width_range[0]) \
             & (optotag_df['waveform_duration'] <= spike_width_range[1])
     optotag_df['optotag_positive'] = optotag_df['evoke_positive'] & optotag_df['evoke_significant'] & optotag_df['valid_spike_width']
     positive_units = optotag_df.index[optotag_df['optotag_positive']].values

@@ -40,7 +40,7 @@ def analyze_csd(
 
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
-    from toolkit.pipeline.data_io import SessionDirectory
+    from toolkit.pipeline.data_io import SessionDirectory, FILES
     from toolkit.analysis.signal import bandpass_power
     from toolkit.plots.plots import plot_channel_signal_array
     from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
@@ -73,7 +73,7 @@ def analyze_csd(
         layer=[GLOBAL_SETTINGS['layer_of_interest']]).values
 
     # load bands of interest
-    bands_of_interest = xr.load_dataarray(RESULTS_DIR / f'bands_of_interest.nc')
+    bands_of_interest = FILES.load('bands_of_interest')
 
     # parameters
     wave_bands = bands_ds.wave_band.values
