@@ -393,30 +393,31 @@ def layer_condition_band_power(
     return cond_band_power, layer_bands_ds
 
 
-def get_band_with_highest_peak(bands_ds: xr.Dataset, dim: str | None = None) -> xr.DataArray | None:
-    """Get the band with the highest peak along a dimension.
+def get_band_with_highest_peak(bands_ds: xr.Dataset, dim: str | Sequence[str] | None = None) -> xr.DataArray | None:
+    """Get the band with the highest peak along a dimension/dimensions.
 
     Parameters
     ----------
     bands_ds : xr.Dataset
         Dataset of bands including 'bands' and 'peaks' data variables.
         Allow only a single dimension of 'bands' except 'bound' and of 'peaks' except 'peak_rank'.
-    dim : str, optional
-        Dimension to get the band from.
-        If not provided, infer the dimension that is not 'bound' or 'peak_rank'.
+    dim : str | Sequence[str] | None
+        Dimension(s) to get the band from.
+        If not provided, along all dimensions that are not 'bound' or 'peak_rank'.
 
     Returns
     -------
     band : xr.DataArray
         Band with the highest peak. None if no peak is detected.
     """
-    if dim is None:
-        dim = next(iter(d for d in bands_ds.dims if d not in {'bound', 'peak_rank'}))
     peaks = bands_ds.peaks.sel(peak_rank=0)
     if np.isnan(peaks).all():
         return None
-    idx = peaks.idxmax(dim=dim).item()
-    return bands_ds.bands.sel({dim:idx})
+    if dim is None:
+        dim = (d for d in bands_ds.dims if d not in {'bound', 'peak_rank'})
+    elif isinstance(dim, str):
+        dim = [dim]
+    return bands_ds.bands.isel(peaks.argmax(dim=list(dim)))
 
 
 def average_psd_across_sessions(
