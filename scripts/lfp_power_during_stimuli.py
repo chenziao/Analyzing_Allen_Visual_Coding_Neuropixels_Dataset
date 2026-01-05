@@ -24,7 +24,7 @@ PARAMETERS = dict(
         help = "Extend time at the start and end of each block to avoid boundary effect for filtering."
     ),
     drifting_gratings_window = dict(
-        default = [-0.5, 0.5]
+        default = [-0.5, 0.5],
         type = list,
         help = "Extend window for drifting gratings LFP from the start and end of each trial."
     ),
