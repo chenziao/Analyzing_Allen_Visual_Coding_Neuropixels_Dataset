@@ -468,6 +468,20 @@ class SessionDirectory:
         csd_dss = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, csd_files)}
         return csd_dss
 
+    # Stimulus LFP power
+    def stimulus_lfp_power(self, stimulus_name : str) -> Path:
+        return self.session_dir / f'{stimulus_name}_lfp_power.nc'
+
+    def save_stimulus_lfp_power(self, lfp_power_dss : dict[str, xr.Dataset]) -> None:
+        for stim, ds in lfp_power_dss.items():
+            ds.to_netcdf(self.stimulus_lfp_power(stim))
+
+    def load_stimulus_lfp_power(self) -> dict[str, xr.Dataset]:
+        lfp_power_files = list(self.session_dir.glob("*_lfp_power.nc"))
+        stimulus_names = [f.stem.removesuffix('_lfp_power') for f in lfp_power_files]
+        lfp_power_dss = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, lfp_power_files)}
+        return lfp_power_dss
+
     # Units information
     @property
     def units_info(self) -> Path:

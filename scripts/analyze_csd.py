@@ -99,10 +99,9 @@ def analyze_csd(
     # Flashes
     stim = 'flashes'
     stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-    stimulus_blocks = st.get_stimulus_blocks(stimulus_trials)
-
     window = (flashes_window[0], stimulus_trials.duration + flashes_window[1])
-    aligned_csd = st.align_trials_from_blocks(csd_array, stimulus_blocks, window=window, ignore_nan_trials='any')[0]
+    aligned_csd, valid_blocks = st.align_trials_from_blocks(
+        csd_array, st.get_stimulus_blocks(stimulus_trials), window=window, ignore_nan_trials='any')
     average_csd = aligned_csd.mean(dim='presentation_id', keep_attrs=True)
     total_power = (aligned_csd ** 2).mean(dim=('presentation_id', 'time_from_presentation_onset'))
 
@@ -116,7 +115,7 @@ def analyze_csd(
     csd_power = {}
     for wave_band in freq_bands.wave_band.values:
         block_power = bandpass_power(ps.bandpass_filter_blocks(
-            csd_array, stimulus_blocks,
+            csd_array, valid_blocks,
             freq_bands.sel(wave_band=wave_band).values,
             extend_time=extend_time,
             include_filtered=False,
@@ -124,7 +123,7 @@ def analyze_csd(
         ))
 
         csd_power[wave_band] = st.align_trials_from_blocks(
-            block_power, stimulus_blocks, window=window
+            block_power, valid_blocks, window=window, ignore_nan_trials=''
         )[0].mean(dim='presentation_id', keep_attrs=True)
     csd_power = xr.concat(csd_power.values(), dim=pd.Index(csd_power, name='wave_band'))
 
@@ -144,19 +143,20 @@ def analyze_csd(
     # Drifting gratings
     stim = drifting_gratings_stimuli[0]  # first drifting grating stimulus
     stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-    stimulus_blocks = st.get_stimulus_blocks(stimulus_trials)
     conditions = st.presentation_conditions(stimulus_trials.presentations)
-
     window = (drifting_gratings_window[0], stimulus_trials.duration + drifting_gratings_window[1])
     aligned_csd, valid_trials = st.align_trials(
         csd_array, stimulus_trials, window=window, ignore_nan_trials='any')
 
-    if valid_trials is not None:  # if any trial is dropped by NaN values
+    if valid_trials is None:
+        valid_trials = stimulus_trials
+    else:  # if any trial is dropped by NaN values
         cond_presentation_id = st.presentation_conditions(valid_trials.presentations)[1]
         if len(conditions[1]) != len(cond_presentation_id):
             diff = set(conditions[1].keys()) - set(cond_presentation_id.keys())
             raise ValueError(f"All trials are dropped by NaN values in {stim} for conditions: {diff}")
         conditions = (conditions[0], cond_presentation_id)
+    valid_blocks = st.get_stimulus_blocks(valid_trials)
 
     # average across presentations of same condition, select conditions, average across conditions (and time)
     average_csd = ps.filter_conditions(st.average_trials_with_conditions(aligned_csd, *conditions)) \
@@ -182,16 +182,13 @@ def analyze_csd(
     csd_power = {}
     for wave_band in freq_bands.wave_band.values:
         block_power = bandpass_power(ps.bandpass_filter_blocks(
-            csd_array, stimulus_blocks,
+            csd_array, valid_blocks,
             freq_bands.sel(wave_band=wave_band).values,
             extend_time=extend_time,
             include_filtered=False,
             include_amplitude=True
         ))
-        block_power, _ = st.align_trials(
-            block_power, stimulus_trials if valid_trials is None else valid_trials,
-            window=window, ignore_nan_trials=''
-        )
+        block_power = st.align_trials(block_power, valid_trials, window=window, ignore_nan_trials='')[0]
 
         csd_power[wave_band] = ps.filter_conditions(st.average_trials_with_conditions(block_power, *conditions)) \
             .sel(orientation=preferred_orientation).mean(dim=st.CONDITION_TYPES, keep_attrs=True)

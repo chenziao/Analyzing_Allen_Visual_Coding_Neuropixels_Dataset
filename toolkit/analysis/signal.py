@@ -130,6 +130,7 @@ def bandpass_filter(
     da: xarray.DataArray
         Data to filter. DataArray must have time dimension 'time' (ms) or specified by time_dim.
         Attributes can optionally include 'fs' for sampling frequency in Hz.
+        Note that the data must not contain any NaN values.
     filt_band: tuple
         Filter band (low, high) Hz.
     order: int
@@ -196,7 +197,17 @@ def bandpass_power(filtered_ds : xr.Dataset) -> xr.DataArray:
             amplitude = np.abs(filtered_ds.analytic)
         else:
             raise ValueError("Amplitude not found in the input dataset.")
-    power = amplitude ** 2 / 2
-    power.attrs.update(filtered_ds.attrs)
-    power.attrs['unit'] = as_string(as_quantity(power.attrs['unit']) ** 2)
-    return power
+    power = instantaneous_power(amplitude.assign_attrs(filtered_ds.attrs))
+    return (power / 2).assign_attrs(power.attrs)
+
+
+def instantaneous_power(da : xr.DataArray) -> xr.DataArray:
+    """Compute instantaneous power from signal by squaring the signal values.
+    Attribute 'unit' is updated if exists.
+    """
+    da = (da ** 2).assign_attrs(da.attrs)
+    if 'unit' in da.attrs:
+        da.attrs['unit'] = as_string(as_quantity(da.attrs['unit']) ** 2)
+    return da
+
+

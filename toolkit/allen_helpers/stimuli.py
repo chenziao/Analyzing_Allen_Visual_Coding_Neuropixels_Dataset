@@ -7,7 +7,7 @@ import pandas as pd
 import xarray as xr
 
 from dataclasses import dataclass
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 
 
 # Lookup table for stimuli
@@ -88,12 +88,15 @@ class StimulusTrials:
         Median duration for each trial.
     gap_duration: float
         Minimum gap duration between trials.
+    presentation_increment: int
+        Increment between consecutive presentations.
     """
     presentations: pd.DataFrame
     ids: NDArray[int]
     times: NDArray[float]
     duration: float
     gap_duration: float
+    presentation_increment: int = 1
 
 
 def get_flashes_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str = 'flashes') -> StimulusTrials:
@@ -154,12 +157,14 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
         presentations[presentations['stimulus_condition_id'] == frame_ids[0]]['start_time'].values,
         presentations[presentations['stimulus_condition_id'] == frame_ids[-1]]['stop_time'].values,
     ])
+    ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values
     stimulus_trials = StimulusTrials(
         presentations = presentations,
-        ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values,
+        ids = ids,
         times = presentations_times[:, 0],
         duration = np.median(np.diff(presentations_times, axis=1)),
-        gap_duration = np.min(presentations_times[1:, 0] - presentations_times[:-1, 1])
+        gap_duration = np.min(presentations_times[1:, 0] - presentations_times[:-1, 1]),
+        presentation_increment = np.min(np.diff(ids))
     )
     return stimulus_trials
 
@@ -255,13 +260,17 @@ class StimulusBlock(StimulusTrials):
     block_window: tuple[float, float]
         Block time window (start, end).
     """
-    block_id: int
-    block_window: tuple[float, float]
+    block_id: int = 0
+    sub_block_id: int = 0
+    block_window: tuple[float, float] = (0., 0.)
 
 
 def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]:
-    """Get stimulus blocks from presentations. Split presentations ids and times into blocks.
-    
+    """Get stimulus blocks from presentations.
+    Split presentation dataframe, presentations ids and times into blocks.
+    A block is a contiguous set of presentations with the same stimulus block id.
+    If any presentations are missing in the block, the block is split into sub-blocks at the missing presentation(s).
+
     Parameters
     ----------
     stimulus_trials : StimulusTrials
@@ -273,23 +282,40 @@ def get_stimulus_blocks(stimulus_trials : StimulusTrials) -> list[StimulusBlock]
         Stimulus blocks.
     """
     presentations = stimulus_trials.presentations
+    presentation_increment = stimulus_trials.presentation_increment
     block_ids = presentations.loc[stimulus_trials.ids, 'stimulus_block'].unique()
     stimulus_blocks = []
     for block_id in block_ids:
+        # all presentations in the block
         block_presentations = presentations.loc[presentations['stimulus_block'] == block_id]
-        block_window = (block_presentations['start_time'].iloc[0], block_presentations['stop_time'].iloc[-1])
+        # representative presentation ids in the block with presentation increment
+        block_presentations_idx = presentations.loc[stimulus_trials.ids, 'stimulus_block'].values == block_id
+        block_presentations_ids = stimulus_trials.ids[block_presentations_idx]
+        block_times = stimulus_trials.times[block_presentations_idx]
+        # Split presentation ids at missing presentations (greater than presentation increment)
+        split_idx = np.nonzero(np.diff(block_presentations_ids) > presentation_increment)[0] + 1
+        interval_idx = np.column_stack((np.insert(split_idx, 0, 0), np.append(split_idx, block_presentations_ids.size)))
 
-        block_idx = np.nonzero(presentations.loc[stimulus_trials.ids, 'stimulus_block'].values == block_id)[0]
-        stimulus_block = StimulusBlock(
-            presentations = block_presentations,
-            ids = stimulus_trials.ids[block_idx],
-            times = stimulus_trials.times[block_idx],
-            duration = stimulus_trials.duration,
-            gap_duration = stimulus_trials.gap_duration,
-            block_id = block_id,
-            block_window = block_window,
-        )
-        stimulus_blocks.append(stimulus_block)
+        for sub_block_id, (start_idx, end_idx) in enumerate(interval_idx):
+            ids = block_presentations_ids[start_idx:end_idx]
+            sub_block_presentations = block_presentations.loc[
+                (block_presentations.index >= ids[0]) & \
+                (block_presentations.index < ids[-1] + presentation_increment)
+            ]
+            block_window = (sub_block_presentations['start_time'].iloc[0],
+                sub_block_presentations['stop_time'].iloc[-1])
+            stimulus_block = StimulusBlock(
+                presentations = sub_block_presentations,
+                ids = ids,
+                times = block_times[start_idx:end_idx],
+                duration = stimulus_trials.duration,
+                gap_duration = stimulus_trials.gap_duration,
+                presentation_increment = presentation_increment,
+                block_id = block_id,
+                sub_block_id = sub_block_id,
+                block_window = block_window
+            )
+            stimulus_blocks.append(stimulus_block)
     return stimulus_blocks
 
 
@@ -356,20 +382,48 @@ def align_trials(
         # check if each trial has all nan
         nan_trials = np.isnan(aligned_signal).all(dim=non_trial_dims).values
     if ignore_nan_trials and nan_trials.any():
-        from copy import copy
-        keep_trials = np.nonzero(~nan_trials)[0]
-        valid_trials = copy(stimulus_trials)
-        valid_trials.presentations = valid_trials.presentations.iloc[keep_trials].copy()
-        valid_trials.ids = valid_trials.ids[keep_trials]
-        valid_trials.times = valid_trials.times[keep_trials]
-
-        aligned_signal = aligned_signal.isel(presentation_id=keep_trials)
+        valid_trials = choose_trials(stimulus_trials, ~nan_trials)
+        aligned_signal = aligned_signal.sel(presentation_id=valid_trials.ids)
         stimulus_name = stimulus_trials.presentations.iloc[0]['stimulus_name']
-        print(f"Dropped {nan_trials.size - keep_trials.size} trials with "
+        print(f"Dropped {nan_trials.size - valid_trials.ids.size} trials with "
             f"{ignore_nan_trials} NaN values in {stimulus_name}.")
     else:
         valid_trials = None
     return aligned_signal, valid_trials
+
+
+def choose_trials(
+    stimulus_trials : StimulusTrials | StimulusBlock,
+    trial_ids : NDArray[bool] | NDArray[int] | ArrayLike
+) -> StimulusTrials | StimulusBlock:
+    """Choose trials with the given indices
+    
+    Parameters
+    ----------
+    stimulus_trials : StimulusTrials | StimulusBlock
+        Stimulus trials object to choose trials from.
+    trial_ids : NDArray[bool] | NDArray[int] | ArrayLike
+        Trial presentation ids or boolean indices of trials.
+
+    Returns
+    -------
+    valid_trials : StimulusTrials | StimulusBlock
+        New StimulusTrials or StimulusBlock object with the chosen trials.
+    """
+    from copy import copy
+    trial_ids = np.asarray(trial_ids)
+    if trial_ids.dtype == 'bool':  # if boolean indices, get integer indices
+        if trial_ids.size != stimulus_trials.ids.size:
+            raise ValueError("Boolean indices must have the same size as the number of trials")
+        trial_idx = np.nonzero(trial_ids)[0]
+    else:  # if not boolean indices, use it as presentation ids
+        trial_idx = stimulus_trials.presentations.index.get_indexer(trial_ids)
+    valid_trials = copy(stimulus_trials)
+    valid_trials.ids = valid_trials.ids[trial_idx]
+    valid_trials.times = valid_trials.times[trial_idx]
+    presentation_ids = valid_trials.ids[:, None] + np.arange(valid_trials.presentation_increment)
+    valid_trials.presentations = valid_trials.presentations.loc[presentation_ids.ravel()].copy()
+    return valid_trials
 
 
 def align_trials_from_blocks(
@@ -380,13 +434,18 @@ def align_trials_from_blocks(
 ) -> tuple[xr.DataArray | xr.Dataset, list[StimulusBlock | None]]:
     """Extract and align signal to time window relative to stimulus onset in given blocks.
     Similar to `align_trials()`, but for multiple blocks.
+    Return `valid_blocks`. If no block is dropped, it is the same as the input `stimulus_blocks`.
+    If any presentation is missing in the input blocks, the returned blocks include sub-blocks split from the original blocks.
     """
     aligned_signals = []
     valid_blocks = []
     for stimulus_block in stimulus_blocks:
         aligned_signal, valid_trials = align_trials(signal_array, stimulus_block, window, ignore_nan_trials)
         aligned_signals.append(aligned_signal)
-        valid_blocks.append(valid_trials)
+        if valid_trials is None:
+            valid_blocks.append(stimulus_block)
+        else:
+            valid_blocks.extend(get_stimulus_blocks(valid_trials))
     aligned_signal = xr.concat(aligned_signals, dim='presentation_id', combine_attrs='override')
     return aligned_signal, valid_blocks
 
