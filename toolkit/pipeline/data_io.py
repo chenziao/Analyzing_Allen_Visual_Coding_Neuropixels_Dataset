@@ -493,6 +493,20 @@ class SessionDirectory:
     def load_units_info(self) -> pd.DataFrame:
         return pd.read_csv(self.units_info, index_col='unit_id')
 
+    # Units spike rate
+    def units_spike_rate(self, stimulus_name : str) -> Path:
+        return self.session_dir / f'{stimulus_name}_unit_spike_rate.nc'
+
+    def save_units_spike_rate(self, units_spk_rate_dss : dict[str, xr.DataArray]) -> None:
+        for stim, units_spk_rate in units_spk_rate_dss.items():
+            units_spk_rate.to_netcdf(self.units_spike_rate(stim))
+
+    def load_units_spike_rate(self) -> dict[str, xr.DataArray]:
+        units_spk_rate_files = list(self.session_dir.glob("*_unit_spike_rate.nc"))
+        stimulus_names = [f.stem.removesuffix('_unit_spike_rate') for f in units_spk_rate_files]
+        units_spk_rate_dss = {stim: xr.load_dataarray(f) for stim, f in zip(stimulus_names, units_spk_rate_files)}
+        return units_spk_rate_dss  
+
 
 # File paths for non-session-specific files
 

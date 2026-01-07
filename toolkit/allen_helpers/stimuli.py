@@ -157,14 +157,13 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
         presentations[presentations['stimulus_condition_id'] == frame_ids[0]]['start_time'].values,
         presentations[presentations['stimulus_condition_id'] == frame_ids[-1]]['stop_time'].values,
     ])
-    ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values
     stimulus_trials = StimulusTrials(
         presentations = presentations,
-        ids = ids,
+        ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values,
         times = presentations_times[:, 0],
         duration = np.median(np.diff(presentations_times, axis=1)),
         gap_duration = np.min(presentations_times[1:, 0] - presentations_times[:-1, 1]),
-        presentation_increment = np.min(np.diff(ids))
+        presentation_increment = int(np.round(len(presentations) / len(presentations_times)))
     )
     return stimulus_trials
 
