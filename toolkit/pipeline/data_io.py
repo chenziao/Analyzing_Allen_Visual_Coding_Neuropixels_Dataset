@@ -507,6 +507,18 @@ class SessionDirectory:
         units_spk_rate_dss = {stim: xr.load_dataarray(f) for stim, f in zip(stimulus_names, units_spk_rate_files)}
         return units_spk_rate_dss  
 
+    # Soft normalization
+    def soft_normalization(self) -> Path:
+        return self.session_dir / 'soft_normalization.json'
+
+    def save_soft_normalization(self, soft_normalization : dict) -> None:
+        with open(self.soft_normalization(), 'w') as f:
+            json.dump(soft_normalization, f, indent=4)
+
+    def load_soft_normalization(self) -> dict:
+        with open(self.soft_normalization(), 'r') as f:
+            soft_normalization = json.load(f)
+        return soft_normalization
 
 # File paths for non-session-specific files
 

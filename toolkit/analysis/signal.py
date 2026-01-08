@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import scipy.signal as ss
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter1d
 
 from .utils import array_spacing
 from ..utils.quantity_units import convert_unit, as_quantity, as_string
@@ -211,3 +211,42 @@ def instantaneous_power(da : xr.DataArray) -> xr.DataArray:
     return da
 
 
+def gaussian_filter1d_da(
+    da : xr.DataArray,
+    sigma : float,
+    dim : str = 'time',
+    mode : str = 'nearest',
+    **kwargs
+) -> xr.DataArray:
+    """Gaussian smooth xr.DataArray along specific dimension
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        Data to smooth. Attributes should include 'fs' for sampling frequency.
+        If 'fs' is not found, try to infer it from the dimension coordinates.
+        If the dimension is not found in the coordinates, assume sampling frequency is 1.
+    sigma : float
+        Sigma of the Gaussian filter (in units of the specified dimension).
+    dim : str
+        Dimension to smooth.
+    mode : str
+        Mode of the Gaussian filter. Default is 'nearest'.
+        See `scipy.ndimage.gaussian_filter1d` for more details.
+    **kwargs : dict
+        Additional arguments for scipy.ndimage.gaussian_filter1d.
+
+    Returns
+    -------
+    da : xr.DataArray
+        Smoothed data. Attributes updated with 'gaussian_sigma' and 'gaussian_mode'.
+    """
+    if 'fs' in da.attrs:
+        fs = da.attrs['fs']
+    elif dim in da.coords:
+        fs = 1 / array_spacing(da.coords[dim])
+    else:
+        fs = 1
+    axis = da.dims.index(dim)
+    filt = gaussian_filter1d(da.values, sigma * fs, axis=axis, mode=mode, **kwargs)
+    return da.copy(data=filt).assign_attrs(gaussian_sigma=sigma)
