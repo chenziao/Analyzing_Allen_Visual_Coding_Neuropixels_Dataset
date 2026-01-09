@@ -520,6 +520,21 @@ class SessionDirectory:
             soft_normalization = json.load(f)
         return soft_normalization
 
+    # PCA parameters
+    def pca_parameters(self) -> Path:
+        return self.session_dir / 'pca_parameters.json'
+
+    def save_pca_parameters(self, pca_parameters : dict) -> None:
+        pca_parameters['n_main_pc'] = int(pca_parameters['n_main_pc'])
+        with open(self.pca_parameters(), 'w') as f:
+            json.dump(pca_parameters, f, indent=4)
+
+    def load_pca_parameters(self) -> dict:
+        with open(self.pca_parameters(), 'r') as f:
+            pca_parameters = json.load(f)
+        return pca_parameters
+
+
 # File paths for non-session-specific files
 
 class Files:
