@@ -15,7 +15,7 @@ def array_spacing(x : ArrayLike) -> float:
     return (x[-1] - x[0]) / (x.size - 1)
 
 
-def get_bins(window : tuple[float, float] = (0., 1.), bin_width : float = 1.0) -> NDArray[float]:
+def get_bins(window : tuple[float, float] = (0., 1.), bin_width : float = 1.0, strict_window : bool = False) -> NDArray[float]:
     """Get bins for a given bin width within a window aligning one bin center at zero.
     Note that the actual window edges are rounded to the nearest bin width.
     
@@ -25,6 +25,8 @@ def get_bins(window : tuple[float, float] = (0., 1.), bin_width : float = 1.0) -
         Window.
     bin_width : float
         Bin width.
+    strict_window : bool
+        Whether bin centers are strictly within the window.
 
     Returns
     -------
@@ -33,7 +35,11 @@ def get_bins(window : tuple[float, float] = (0., 1.), bin_width : float = 1.0) -
     bin_edges : NDArray[float]
         Bin edges.
     """
-    int_window = np.round(np.array(window) / bin_width).astype(int)
+    int_window = np.array(window) / bin_width
+    if strict_window:
+        int_window = int(np.ceil(int_window[0])), int(np.floor(int_window[1]))
+    else:
+        int_window = np.round(int_window).astype(int)
     bin_centers = np.arange(int_window[0], int_window[1] + 1) * bin_width
     bin_edges = np.append(bin_centers - bin_width / 2, bin_centers[-1] + bin_width / 2)
     return bin_centers, bin_edges
