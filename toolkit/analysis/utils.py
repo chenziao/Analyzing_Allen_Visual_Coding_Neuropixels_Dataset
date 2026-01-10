@@ -59,11 +59,13 @@ def stack_xarray_dims(
     da : xr.DataArray | xr.Dataset
         Dataarray or dataset to stack dimensions.
     dims : Sequence[str]
-        Dimensions to stack.
+        Dimensions to stack. Note that the order of dimensions in `dims`
+        determines the stacked dimension in 'C' order.
     exclude_dims : Sequence[str]
-        Dimensions to exclude from stacking. If specified, `dims` will be ignored.
+        Dimensions to exclude from stacking. If specified, `dims` will be ignored
+        and the remaining dimensions in the original order will be stacked.
     stack_dim : str
-        Name of the new dimension.
+        Name of the new dimension. The new dimension will be the last dimension.
     create_index : bool
         If True, create a multi-index for the stacked dimension.
         If False, create one single (1-d) coordinate index for the new dimension

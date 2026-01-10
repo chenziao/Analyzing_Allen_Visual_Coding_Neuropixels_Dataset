@@ -542,3 +542,29 @@ def plot_optotag_units(
     ax.set_ylabel('Evoked ratio')
     ax.legend(loc='upper right', framealpha=0.2)
     return ax
+
+
+def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_grid=True, ax=None, **pcm_kwargs):
+    """Plot heatmap in grids
+    C: the mesh data used in `matplotlib.axes.Axes.pcolormesh`
+    x_bins, y_bins: bin edges of the grids. X, Y used in `matplotlib.axes.Axes.pcolormesh`
+    xticks_fmt, yticks_fmt: format string for converting ticks to labels
+    even_grid: whether display evenly spaced grids regardless of values of bin edges
+        if False, edges of grids are displayed at bin edges locations in the original scale
+    ax: axes to display the plot
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1)
+    args = [] if even_grid else (x_bins, y_bins)
+    pcm = ax.pcolormesh(*args, C, **pcm_kwargs)
+    if even_grid:
+        ax.set_xticks(range(len(x_bins)))
+        ax.set_yticks(range(len(y_bins)))
+    else:
+        ax.set_xticks(x_bins)
+        ax.set_yticks(y_bins)
+    xticklabels = x_bins if xticks_fmt is None else map(xticks_fmt.format, x_bins)
+    yticklabels = y_bins if yticks_fmt is None else map(yticks_fmt.format, y_bins)
+    ax.set_xticklabels(xticklabels)
+    ax.set_yticklabels(yticklabels)
+    return pcm
