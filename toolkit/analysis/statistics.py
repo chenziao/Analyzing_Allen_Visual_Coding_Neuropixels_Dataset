@@ -1,7 +1,7 @@
 import numpy as np
 
-from typing import Self
-from numpy.typing import NDArray
+from typing import Callable
+from numpy.typing import NDArray, ArrayLike
 
 
 class WeightedPCA:
@@ -31,7 +31,7 @@ class WeightedPCA:
         self.mean_ : NDArray[float] | None = None
         self.explained_variance_ratio_ : NDArray[float] | None = None
 
-    def fit(self, X : NDArray[float], weights : NDArray[float] | None = None) -> Self:
+    def fit(self, X : NDArray[float], weights : NDArray[float] | None = None) -> 'WeightedPCA':
         """Fit the WeightedPCA model
 
         Parameters
@@ -44,7 +44,7 @@ class WeightedPCA:
 
         Returns
         -------
-        Self
+        self : WeightedPCA
             Fitted WeightedPCA model.
         """
         X = np.asarray(X)
@@ -98,11 +98,22 @@ class WeightedPCA:
         return self.transform(X)
 
 
-def quantize(x, n_bins):
-    """Quantize data in an array by its equally spaced quantiles
-    x: data array
-    n_bins: number of quantile bins of equal space
-    Return: array of bin index of data points, value of bin edges
+def quantize(x : ArrayLike, n_bins : int) -> tuple[NDArray[int], NDArray[float]]:
+    """Quantize 1-d data by its equally spaced quantiles
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Data array. Array is flattened to get the quantiles if it is not 1-d array.
+    n_bins : int
+        Number of quantile bins of equal space.
+
+    Returns
+    -------
+    bid : NDArray[int]
+        Array of bin index valued in [0, ..., n_bins - 1] of data points (same shape as `x`).
+    bins : NDArray[float]
+        Values of (n_bins + 1,) quantile bin edges.
     """
     x = np.asarray(x)
     bins = np.quantile(x, np.linspace(0, 1, n_bins + 1))
@@ -110,41 +121,94 @@ def quantize(x, n_bins):
     return bid, bins
 
 
-def statistic_in_quantile_grid(X, Y, n_bins=8, stat=np.mean, stat_fill=np.nan):
-    """Divide data points into grids by n-quantiles of some features and
-    calculate statistics of some features in the grids
-    X: list of arrays of features according to which data are divided
-    Y: list of arrays of features of which to obtain statistics
-    n_bins: number of bins for all features in X
-        or a list of them corresponding to each feature in X
-    stat: function that calculate a statistic of each feature in Y. default: mean
-        function should allow operation along specific axis with argument `axis`
-    stat_fill: value to fill when no data exists in a grid. default: nan
-    Return: statistics of each feature in Y, bin edges of each features in X, nd histogram count
-    Note: data in X and Y must not contain nan values
+def quantize_nd(
+    X : ArrayLike,
+    n_bins : int | list[int] = 8
+) -> tuple[NDArray[NDArray[int]], tuple[NDArray[float]], NDArray[int]]:
+    """Quantize n-d data into grids by equally spaced quantiles of each feature
+
+    Parameters
+    ----------
+    X : ArrayLike
+        Data (n_features, n_samples) matrix to be quantized.
+        If array dimension is greater than 2, all dimensions except the first one are flattened.
+    n_bins : int | list[int]
+        Number of quantile bins [m_0, m_1, ..., m_{p-1}] of equal space for each feature.
+        If an integer, the same number of bins is used for all features.
+
+    Returns
+    -------
+    idx_in_grid : NDArray[NDArray[int]]
+        Indices of data points that belong to each quantile grid of features.
+        An (m_0, m_1, ..., m_{p-1}) array, each element of which is an indices array.
+    bins : tuple[NDArray[float]]
+        Tuple of (m_i + 1,) arrays of quantile bin edges for each feature.
+    hist_counts : NDArray[int]
+        Histogram counts in each quantile grid (m_0, m_1, ..., m_{p-1}).
     """
-    if isinstance(n_bins, int):
-        n_bins = [n_bins] * len(X)
+    X = np.asarray(X).reshape(len(X), -1)  # (p, n) matrix of p-features with sample dimension flattened
+    if isinstance(n_bins, int):  # p features have the same m=bins
+        n_bins = [n_bins] * X.shape[0]
     else:
-        if len(X) != len(n_bins):
+        if len(n_bins) != X.shape[0]:  # p features have different m_i bins (i=0, ..., p-1)
             raise ValueError("Size of `n_bins` should match number of features `X`")
-    bids, bins = zip(*map(quantize, X, n_bins))
-    bidx = [np.arange(n) for n in n_bins]
-    gids = [bid == idx[:, None] for bid, idx in zip(bids, bidx)]
-    grid_ids = np.meshgrid(*bidx, indexing='ij')
-    idx_in_grid = np.full(n_bins, None, dtype=object)
-    hist_count = np.zeros(n_bins, dtype=int)
-    for ids in np.nditer(grid_ids):
-        idx = np.all([gid[i] for gid, i in zip(gids, ids)], axis=0)
-        idx_in_grid[ids] = np.nonzero(idx)[0]
-        hist_count[ids] = idx_in_grid[ids].size
-    y_stats = []
-    for y in Y:
-        y = np.asarray(y)
-        y_stat = np.full(n_bins, stat_fill, dtype=y.dtype)
-        for ids in np.nditer(grid_ids):
-            if hist_count[ids]:
-                y_stat[ids] = stat(y[idx_in_grid[ids]])
-        y_stats.append(y_stat)
-    y_stats = np.stack(y_stats, axis=0)
-    return y_stats, bins, hist_count
+
+    # Quantize each feature into grids
+    bids, bins = zip(*map(quantize, X, n_bins))  # p-lists of bin indices (n,) and bin edges (m_i + 1,)
+    bidx = [np.arange(n) for n in n_bins]  # p-lists of bin indices arrays (m_i,)
+    gids = [bid == idx[:, None] for bid, idx in zip(bids, bidx)]  # p-lists of (m_i, n) grid boolean indices matrices
+    grid_idx = np.meshgrid(*bidx, indexing='ij')  # p-lists of grid arrays (m_0, m_1, ..., m_{p-1}) of indices along each feature
+
+    # Count and mark data points in each grid
+    idx_in_grid = np.full(n_bins, None, dtype=object)  # (m_0, m_1, ..., m_{p-1}) array of data indices in each grid
+    for gidx in np.nditer(grid_idx):  # idx is a p-tuple of indices along each feature (i_0, i_1, ..., i_{p-1})
+        idx = np.all([gid[i] for gid, i in zip(gids, gidx)], axis=0)  # (n,) array of boolean indices of data points in the grid
+        idx_in_grid[gidx] = np.nonzero(idx)[0]  # indices array of data points in the grid
+    hist_counts = np.vectorize(np.size)(idx_in_grid)  # histogram counts in each grid
+    return idx_in_grid, bins, hist_counts
+
+
+def statistic_in_grid(
+    X : ArrayLike,
+    idx_in_grid : NDArray[NDArray[int]],
+    hist_counts : NDArray[int] | None = None,
+    stat_method : Callable | str = np.mean,
+    stat_fill : float = np.nan
+) -> tuple[NDArray[float], NDArray[int]]:
+    """Get statistics of data features for samples divided into each of n-d grids
+
+    Parameters
+    ----------
+    X : ArrayLike
+        Data (n_features, n_samples) matrix to get statistics for.
+        If array dimension is greater than 2, all dimensions except the first one are flattened.
+    idx_in_grid : NDArray[NDArray[int]]
+        Indices of data points that belong to each quantile grid of features (as returned by `quantize_nd`).
+        An (m_0, m_1, ..., m_{p-1}) array, each element of which is an indices array.
+    hist_counts : NDArray[int], optional
+        Histogram counts in each grid. If not provided, it is caculated from `idx_in_grid`.
+    stat_method : Callable | str
+        Function to calculate statistics for each feature. If a string, it is a numpy function name like 'mean'.
+    stat_fill : float, optional
+        Value to fill when no data exists in a grid. Default: nan.
+
+    Returns
+    -------
+    stats : NDArray[float]
+        Statistics of each feature for each grid (n_features, m_0, m_1, ..., m_{p-1}).
+    hist_counts : NDArray[int]
+        Histogram counts in each grid (m_0, m_1, ..., m_{p-1}).
+    """
+    if hist_counts is None:
+        hist_counts = np.vectorize(np.size)(idx_in_grid)
+    if isinstance(stat_method, str):
+        stat_method = getattr(np, stat_method)
+    elif not callable(stat_method):
+        raise ValueError("`stat_method` must be a callable function or a string of numpy function name like 'mean'.")
+    X = np.asarray(X).reshape(len(X), -1)  # (p, n) matrix of p-features with sample dimension flattened
+    stats = np.full(X.shape[:1] + idx_in_grid.shape, stat_fill, dtype=type(stat_fill))
+    for x, stat in zip(X, stats):
+        for idx in np.ndindex(idx_in_grid.shape):
+            if hist_counts[idx]:
+                stat[idx] = stat_method(x[idx_in_grid[idx]])
+    return stats, hist_counts

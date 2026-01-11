@@ -11,14 +11,17 @@ from .format import UNIT
 
 from typing import Any, Literal, Sequence
 from matplotlib.pyplot import Figure, Axes
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from fooof import FOOOF
     from fooof.data import FOOOFResults
+    from matplotlib.collections import QuadMesh
+    from matplotlib.collections import LineCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 
-def plot_probe_channel_positions(channels : pd.DataFrame, ax : Axes | None = None):
+def plot_probe_channel_positions(channels : pd.DataFrame, ax : Axes | None = None) -> Axes:
     """Plot probe channel positions.
 
     Parameters
@@ -63,7 +66,7 @@ def plot_channel_signal_array(
     xlabel : str = f'Time ({UNIT.s})',
     clabel : str = 'CSD',
     c_unit : str = None,
-):
+) -> Axes:
     """Plot signal array along channels and time.
     Show Dorsal-Ventral CCF coordinates and layer labels along the channel axis (y-axis).
 
@@ -135,7 +138,6 @@ def plot_channel_signal_array(
         subset_labels = map(str, np.round(np.asarray(coordinates)[subset_idx]).astype(int))
         ax2.set_yticks(channel_positions.iloc[subset_idx])
         ax2.set_yticklabels(subset_labels)
-
     return ax
 
 
@@ -148,7 +150,7 @@ def plot_channel_psd(
     cmap : str = 'plasma',
     channel_title : str | None = None,
     ax : Axes | None = None
-):
+) -> Axes:
     """Plot PSD at available channels.
     
     Parameters
@@ -213,11 +215,11 @@ def plot_channel_psd(
 def plot_fooof_quick(
     fooof : FOOOF,
     plot_peaks : Literal['shade', 'dot', 'outline', 'line'] | None = 'dot',
-    freq_range=(),
-    plt_log=False,
-    ax=None,
-    **kwargs
-):
+    freq_range : ArrayLike | float = (),
+    plt_log : bool = False,
+    ax : Axes | None = None,
+    **kwargs : dict
+) -> Axes:
     """Helper function for plotting FOOOF results using built-in function FOOOF.plot().
     This function constraints the frequency range to avoid errors.
     
@@ -257,7 +259,7 @@ def plot_fooof(psd_da : xr.DataArray | ArrayLike,
     power_scale : Literal['dB', 'log', 'linear'] = 'dB',
     log_frequency : bool = False,
     ax : Axes | None = None
-):
+) -> Axes:
     """Plot FOOOF results in customized style.
     
     Parameters
@@ -338,8 +340,8 @@ def plot_freq_band(
     band_colors_map : dict[str, Any] | None = None,
     alpha : float = 0.1,
     ax : Axes | None = None,
-    **kwargs
-):
+    **kwargs : dict
+) -> Axes:
     """Plot the frequency band as vertical shaded regions.
     
     Parameters
@@ -389,7 +391,7 @@ def plot_layer_condition_band_power(
     x_cond : str,
     y_cond : str,
     figsize : tuple[float, float] = (4.8, 3.0)
-) -> tuple[Figure, np.ndarray]:
+) -> tuple[Figure, NDArray[Axes]]:
     """Plot heatmap of band power in conditions for each layer.
     
     Parameters
@@ -448,7 +450,7 @@ def plot_optotag_evoke_ratio(
     min_rate : float = 1.,
     evoked_ratio_threshold : float | None = None,
     ax : Axes | None = None
-):
+) -> Axes:
     log_gap = 2 ** 0.5  # gap for log scale plot axis limit
     max_rate = max(optotag_df['opto_evoked_rate'].max(), optotag_df['opto_baseline_rate'].max()) + min_rate
     rate_limit = np.array([min_rate / log_gap, max_rate * log_gap])
@@ -487,7 +489,7 @@ def plot_optotag_units(
     spike_width_range : tuple[float, float] | None = None,
     marker_size : float = 3,
     ax : Axes | None = None
-):
+) -> Axes:
     """Plot scatter plot of optotag units with evoked ratio and spike width thresholds
     
     Parameters
@@ -544,22 +546,58 @@ def plot_optotag_units(
     return ax
 
 
-def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_grid=True, ax=None, **pcm_kwargs):
-    """Plot heatmap in grids
-    C: the mesh data used in `matplotlib.axes.Axes.pcolormesh`
-    x_bins, y_bins: bin edges of the grids. X, Y used in `matplotlib.axes.Axes.pcolormesh`
-    xticks_fmt, yticks_fmt: format string for converting ticks to labels
-    even_grid: whether display evenly spaced grids regardless of values of bin edges
-        if False, edges of grids are displayed at bin edges locations in the original scale
-    ax: axes to display the plot
+def heatmap_in_grid(
+    C : NDArray[float],
+    x_bins : ArrayLike | None = None,
+    y_bins : ArrayLike | None = None,
+    xticks_fmt : str | None = None,
+    yticks_fmt : str | None = None,
+    even_grid : bool = True,
+    ax : Axes | None = None,
+    **pcm_kwargs : dict
+) -> tuple[QuadMesh, Axes]:
+    """Plot heatmap in grids with flexible format
+
+    Parameters
+    ----------
+    C : NDArray[float]
+        The mesh data used in `matplotlib.axes.Axes.pcolormesh`.
+        Note that the first dimension is the x-axis, and the second dimension is the y-axis.
+    x_bins : ArrayLike | None
+        Bin edges of the x-axis. If not provided, create integer bins.
+    y_bins : ArrayLike | None
+        Bin edges of the y-axis. If not provided, create integer bins.
+    xticks_fmt, yticks_fmt : str | None
+        Format string for converting x and y bin edges to tick labels.
+        If not provided, use the bin edges values directly as tick labels.
+    even_grid : bool
+        Whether display evenly spaced grids regardless of bin edges values.
+        If False, bin edges are displayed in the actual locations.
+    ax : Axes | None
+        Axes to display the plot. If None, create a new figure and axes.
+    **pcm_kwargs : dict
+        Additional keyword arguments for `matplotlib.axes.Axes.pcolormesh`.
+
+    Returns
+    -------
+    pcm : QuadMesh
+        The pcolormesh object.
+    ax : Axes
+        Axes object with the plot.
     """
+    x_edges = np.arange(C.shape[0] + 1)
+    y_edges = np.arange(C.shape[1] + 1)
+    if x_bins is None:
+        x_bins = x_edges
+    if y_bins is None:
+        y_bins = y_edges
     if ax is None:
         _, ax = plt.subplots(1, 1)
-    args = [] if even_grid else (x_bins, y_bins)
-    pcm = ax.pcolormesh(*args, C, **pcm_kwargs)
+    args = () if even_grid else (x_bins, y_bins)
+    pcm = ax.pcolormesh(*args, np.transpose(C, (1, 0)), **pcm_kwargs)
     if even_grid:
-        ax.set_xticks(range(len(x_bins)))
-        ax.set_yticks(range(len(y_bins)))
+        ax.set_xticks(x_edges)
+        ax.set_yticks(y_edges)
     else:
         ax.set_xticks(x_bins)
         ax.set_yticks(y_bins)
@@ -567,4 +605,63 @@ def heatmap_in_grid(C, x_bins, y_bins, xticks_fmt=None, yticks_fmt=None, even_gr
     yticklabels = y_bins if yticks_fmt is None else map(yticks_fmt.format, y_bins)
     ax.set_xticklabels(xticklabels)
     ax.set_yticklabels(yticklabels)
-    return pcm
+    return pcm, ax
+
+
+def plot_multicolor_line(
+    *args, c : ArrayLike | None = None,
+    ax : Axes | None = None,
+    cmap : str = 'jet',
+    linewidth : float = 2,
+    linestyle : str = '-',
+    alpha : float = 1
+) -> tuple[LineCollection | Line3DCollection, Axes]:
+    """Plot line with varying color on its segments.
+    
+    Parameters
+    ----------
+    *args : Sequence[ArrayLike]
+        Arrays of coordinates of points: x, y, (z, optional)
+    c : ArrayLike | None
+        Values for color map, corresponding to points (n,) or segments (n-1,).
+    ax : Axes | None
+        Axes to plot on. If None, a new figure and axes will be created.
+    cmap : str
+        Color map.
+    linewidth : float
+        Line width.
+    linestyle : str
+        Line style.
+    alpha : float
+        Alpha value for the line color.
+
+    Returns
+    -------
+    line : LineCollection | Line3DCollection
+        The line object.
+    ax : Axes
+        Axes object with the plot.
+    """
+    from matplotlib.collections import LineCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+    points = np.column_stack(args)[:, None, :]
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    if c is None:
+        c = np.arange(points.shape[0])
+    if not (len(c) == points.shape[0] or len(c) == points.shape[0] - 1):
+        raise ValueError("The number of color values must be equal to or one less than the number of points.")
+    cmid = (c[:-1] + c[1:]) / 2 if len(c) == points.shape[0] else c
+    # Create a continuous norm to map from data points to colors
+    norm = plt.Normalize(c.min(), c.max())
+    linecollection = Line3DCollection if segments.shape[-1] > 2 else LineCollection
+    lc = linecollection(segments, cmap=cmap, norm=norm)
+    # Set the values used for colormapping
+    lc.set_array(cmid)
+    lc.set_linewidth(linewidth)
+    lc.set_linestyle(linestyle)
+    lc.set_alpha(alpha)
+    if ax is None:
+        _, ax = plt.subplots()
+    ax.add_collection(lc)
+    return lc, ax
