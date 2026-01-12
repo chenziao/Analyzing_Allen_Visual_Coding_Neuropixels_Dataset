@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from ..paths import paths
 from ..pipeline.global_settings import GLOBAL_SETTINGS
-from .data_io import SessionSet, get_sessions
+from .data_io import SessionSet, get_sessions, safe_mkdir
 
 from typing import Sequence, Callable, Any
 
@@ -216,13 +216,13 @@ def log_file_path(script_name: str, suffix: str, array_job_id: str = None) -> Pa
     batch_log_dir = paths.BATCH_LOG_DIR
     if array_job_id:
         batch_log_dir = batch_log_dir / f"{script_name}_job{array_job_id}"
-    batch_log_dir.mkdir(parents=True, exist_ok=True)
+    safe_mkdir(batch_log_dir)
     return batch_log_dir / f"{script_name}_{suffix}.log"
 
 
 def parameters_file_path(script_name: str, timestamp: str) -> Path:
     """Get the path for the parameters JSON file."""
-    paths.BATCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    safe_mkdir(paths.BATCH_LOG_DIR)
     return paths.BATCH_LOG_DIR / f"{script_name}_parameters_{timestamp}.json"
 
 

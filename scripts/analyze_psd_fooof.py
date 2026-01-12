@@ -83,7 +83,7 @@ def analyze_psd_fooof(
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
     import toolkit.plots.plots as plots
-    from toolkit.pipeline.data_io import SessionDirectory, format_for_path
+    from toolkit.pipeline.data_io import SessionDirectory, format_for_path, safe_mkdir
     from toolkit.paths.paths import FIGURE_DIR
     from toolkit.plots.format import SAVE_FIGURE, save_figure
 
@@ -204,9 +204,9 @@ def analyze_psd_fooof(
     # Plot PSD and FOOOF
     for stim, psd_avg in psd_ds.data_vars.items():
         stim_layer_psd_dir = layer_psd_dir / stim
-        stim_layer_psd_dir.mkdir(parents=True, exist_ok=True)
+        safe_mkdir(stim_layer_psd_dir)
         stim_fooof_dir = fooof_dir / stim
-        stim_fooof_dir.mkdir(parents=True, exist_ok=True)
+        safe_mkdir(stim_fooof_dir)
 
         ax = plots.plot_channel_psd(psd_avg, channel_dim='layer', freq_range=plt_range)
         ax.set_title(stim)
@@ -231,7 +231,7 @@ def analyze_psd_fooof(
     x_cond, y_cond = st.VARIED_CONDITION_TYPES[session_type]
     for stim, cond_band_power in cond_band_power_das.items():
         stim_cond_band_power_dir = cond_band_power_dir / stim
-        stim_cond_band_power_dir.mkdir(parents=True, exist_ok=True)
+        safe_mkdir(stim_cond_band_power_dir)
 
         fig, axs = plots.plot_layer_condition_band_power(cond_band_power, layer_bands_ds[stim], x_cond, y_cond)
         save_figure(stim_cond_band_power_dir, fig, name=session_str)

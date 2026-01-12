@@ -40,7 +40,7 @@ def analyze_csd(
 
     import toolkit.allen_helpers.stimuli as st
     import toolkit.pipeline.signal as ps
-    from toolkit.pipeline.data_io import SessionDirectory, FILES
+    from toolkit.pipeline.data_io import SessionDirectory, FILES, safe_mkdir
     from toolkit.analysis.signal import bandpass_power
     from toolkit.plots.plots import plot_channel_signal_array
     from toolkit.pipeline.global_settings import GLOBAL_SETTINGS
@@ -223,7 +223,7 @@ def analyze_csd(
     # Plot CSD
     for stim, csd_ds in csd_dss.items():
         stim_dir = fig_dir / stim
-        stim_dir.mkdir(parents=True, exist_ok=True)
+        safe_mkdir(stim_dir)
 
         # average CSD
         fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))

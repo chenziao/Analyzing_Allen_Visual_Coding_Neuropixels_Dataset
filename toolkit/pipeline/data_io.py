@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from pathlib import Path
 import re
 import json
+import time
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -76,7 +77,7 @@ class SessionDirectory:
     @property
     def session_dir(self) -> Path:
         if not self.exist:
-            self._session_dir.mkdir(parents=True, exist_ok=True)
+            safe_mkdir(self._session_dir)
         return self._session_dir
 
     @property
@@ -507,32 +508,27 @@ class SessionDirectory:
         units_spk_rate_dss = {stim: xr.load_dataarray(f) for stim, f in zip(stimulus_names, units_spk_rate_files)}
         return units_spk_rate_dss  
 
-    # Soft normalization
-    def soft_normalization(self) -> Path:
-        return self.session_dir / 'soft_normalization.json'
+    # Population vector
+    def population_vector_parameters(self, config_name : str) -> Path:
+        return FILES.population_vector_dir(config_name) / f'{self.session_id}_parameters.json'
 
-    def save_soft_normalization(self, soft_normalization : dict) -> None:
-        with open(self.soft_normalization(), 'w') as f:
-            json.dump(soft_normalization, f, indent=4)
+    def save_population_vector_parameters(self, config_name : str, parameters : dict) -> None:
+        with open(self.population_vector_parameters(config_name), 'w') as f:
+            json.dump(parameters, f, indent=4)
 
-    def load_soft_normalization(self) -> dict:
-        with open(self.soft_normalization(), 'r') as f:
-            soft_normalization = json.load(f)
-        return soft_normalization
+    def load_population_vector_parameters(self, config_name : str) -> dict:
+        with open(self.population_vector_parameters(config_name), 'r') as f:
+            parameters = json.load(f)
+        return parameters
 
-    # PCA parameters
-    def pca_parameters(self) -> Path:
-        return self.session_dir / 'pca_parameters.json'
+    def population_vector_data(self, config_name : str) -> Path:
+        return FILES.population_vector_dir(config_name) / f'{self.session_id}_data.nc'
 
-    def save_pca_parameters(self, pca_parameters : dict) -> None:
-        pca_parameters['n_main_pc'] = int(pca_parameters['n_main_pc'])
-        with open(self.pca_parameters(), 'w') as f:
-            json.dump(pca_parameters, f, indent=4)
+    def save_population_vector_data(self, config_name : str, power_ds : xr.Dataset) -> None:
+        power_ds.to_netcdf(self.population_vector_data(config_name))
 
-    def load_pca_parameters(self) -> dict:
-        with open(self.pca_parameters(), 'r') as f:
-            pca_parameters = json.load(f)
-        return pca_parameters
+    def load_population_vector_data(self, config_name : str) -> xr.Dataset:
+        return xr.load_dataset(self.population_vector_data(config_name))
 
 
 # File paths for non-session-specific files
@@ -543,7 +539,7 @@ class Files:
         session_selection=RESULTS_DIR / 'session_selection.csv',
         optotagged_sessions=RESULTS_DIR / 'optotagged_sessions.csv',
         bands_of_interest=RESULTS_DIR / 'bands_of_interest.nc',
-        all_units_info=RESULTS_DIR / 'all_units_info.csv',
+        all_units_info=RESULTS_DIR / 'all_units_info.csv'
     )
 
     _index_col = dict(
@@ -623,6 +619,12 @@ class Files:
         structure_acronym: str | None = None
     ) -> Path:
         return self._data_dir(structure_acronym) / f'average_wave_bands_{session_type}_{session_set}.nc'
+
+    def population_vector_dir(self, config_name : str) -> Path:
+        return RESULTS_DIR / 'population_vector' / config_name
+
+    def population_vector_parameters(self, config_name : str) -> Path:
+        return self.population_vector_dir(config_name) / 'global_parameters.json'
 
 FILES = Files()  # Create instance of Files
 
@@ -722,7 +724,7 @@ def get_session_selection(structure_acronym : str = STRUCTURE_ACRONYM) -> pd.Dat
     if file.exists():
         sessions_df = FILES.load('session_selection')
     else:
-        file.parent.mkdir(parents=True, exist_ok=True)
+        safe_mkdir(file.parent)
         sessions_df = initialize_session_selection(structure_acronym)
         sessions_df.to_csv(file)
     return sessions_df
@@ -810,3 +812,29 @@ def get_optotagged_sessions() -> pd.DataFrame:
 def format_for_path(path : str) -> str:
     """Format a string to be valid for a path"""
     return re.sub(r'[\\/:*?"<>|]', '_', path)
+
+
+# Helper functions
+
+def safe_mkdir(path : Path | str, max_retries : int = 3) -> None:
+    """Make a directory safely for multiple processes
+
+    Parameters
+    ----------
+    path : Path | str
+        The path to the directory to make.
+    max_retries : int
+        The maximum number of retries for filesystem lag.
+    """
+    path = Path(path)
+    for _ in range(max_retries):  # Retry a few times for filesystem lag
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return
+        except FileExistsError:
+            if path.is_dir():
+                return
+            raise FileExistsError(f"File instead of directory exists: {path}")
+        except Exception:
+            time.sleep(0.5)  # Wait for sync
+    path.mkdir(parents=True, exist_ok=True)

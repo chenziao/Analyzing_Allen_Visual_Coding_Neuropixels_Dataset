@@ -127,6 +127,7 @@ class StructureFinder:
             Voxel size (µm, use 10, 25, 50...) for CCF annotation resolution.
         """
         from allensdk.core.reference_space_cache import ReferenceSpaceCache
+        from toolkit.pipeline.data_io import safe_mkdir
 
         self.cache_dir = Path(cache_dir)
         self.reference_space_cache_dir = self.cache_dir / "annotation" / "ccf_2017"
@@ -134,7 +135,7 @@ class StructureFinder:
         self.voxel = int(voxel)
     
         # Load structure tree. Manifest will be cached locally
-        self.reference_space_cache_dir.mkdir(exist_ok=True, parents=True)
+        safe_mkdir(self.reference_space_cache_dir)
         self.rsc = ReferenceSpaceCache(
             resolution=self.voxel,
             reference_space_key="annotation/ccf_2017",

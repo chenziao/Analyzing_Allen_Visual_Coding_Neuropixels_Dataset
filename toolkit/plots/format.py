@@ -45,7 +45,6 @@ def save_figure(
         File name to save the figure when `fig` is a single figure.
     """
     fig_dir = Path(fig_dir)
-    fig_dir.mkdir(parents=True, exist_ok=True)
     savefig_kwargs = OUTPUT_CONFIG['savefig_kwargs'] | savefig_kwargs
 
     if not isinstance(figs, dict):
