@@ -426,20 +426,24 @@ def choose_trials(
 
 
 def align_trials_from_blocks(
-    signal_array : xr.DataArray | xr.Dataset,
+    signal_array : xr.DataArray | xr.Dataset | list[xr.DataArray | xr.Dataset],
     stimulus_blocks : list[StimulusBlock],
     window : tuple[float, float] = (0., 1.),
     ignore_nan_trials : str = 'auto'
 ) -> tuple[xr.DataArray | xr.Dataset, list[StimulusBlock | None]]:
     """Extract and align signal to time window relative to stimulus onset in given blocks.
     Similar to `align_trials()`, but for multiple blocks.
+    `signal_array` can be a single xr.DataArray or xr.Dataset,
+    or a list of xr.DataArray or xr.Dataset corresponding to the input `stimulus_blocks`.
     Return `valid_blocks`. If no block is dropped, it is the same as the input `stimulus_blocks`.
     If any presentation is missing in the input blocks, the returned blocks include sub-blocks split from the original blocks.
     """
     aligned_signals = []
     valid_blocks = []
-    for stimulus_block in stimulus_blocks:
-        aligned_signal, valid_trials = align_trials(signal_array, stimulus_block, window, ignore_nan_trials)
+    if isinstance(signal_array, xr.DataArray | xr.Dataset):
+        signal_array = [signal_array] * len(stimulus_blocks)
+    for da, stimulus_block in zip(signal_array, stimulus_blocks):
+        aligned_signal, valid_trials = align_trials(da, stimulus_block, window, ignore_nan_trials)
         aligned_signals.append(aligned_signal)
         if valid_trials is None:
             valid_blocks.append(stimulus_block)

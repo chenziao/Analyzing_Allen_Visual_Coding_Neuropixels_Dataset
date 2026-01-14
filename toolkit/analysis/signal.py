@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import scipy.signal as ss
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter, gaussian_filter1d
 
 from .utils import array_spacing
 from ..utils.quantity_units import convert_unit, as_quantity, as_string

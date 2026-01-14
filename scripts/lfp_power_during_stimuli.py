@@ -144,19 +144,21 @@ def lfp_power_during_stimuli(
 
     lfp_bands_power = []
     for wave_band in wave_bands:
-        block_power = bandpass_power(ps.bandpass_filter_blocks(
+        block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
             lfp_groups, valid_blocks,
             freq_bands.sel(wave_band=wave_band).values,
             extend_time=extend_time,
             include_filtered=False,
-            include_amplitude=True
-        ))
-        lfp_bands_power.append(st.align_trials(block_power, valid_trials, window=window, ignore_nan_trials='')[0])
+            include_amplitude=True,
+            concat=False
+        )]
+        lfp_bands_power.append(st.align_trials_from_blocks(block_power, valid_blocks, window=window, ignore_nan_trials='')[0])
     lfp_bands_power = xr.concat(lfp_bands_power, dim=pd.Index(wave_bands, name='wave_band'), combine_attrs='drop_conflicts')
 
     if filter_instantaneous_power:
-        block_filt = ps.bandpass_filter_blocks(lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time)
-        aligned_lfp = st.align_trials(block_filt.filtered, valid_trials, window=window, ignore_nan_trials='')[0]
+        block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
+            lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
+        aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
     lfp_power_dss[stim] = xr.Dataset(
         data_vars = dict(
             instantaneous_power = instantaneous_power(aligned_lfp),
@@ -177,19 +179,21 @@ def lfp_power_during_stimuli(
 
         lfp_bands_power = []
         for wave_band in wave_bands:
-            block_power = bandpass_power(ps.bandpass_filter_blocks(
+            block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
                 lfp_groups, valid_blocks,
                 freq_bands.sel(wave_band=wave_band).values,
                 extend_time=extend_time,
                 include_filtered=False,
-                include_amplitude=True
-            ))
+                include_amplitude=True,
+                concat=False
+            )]
             lfp_bands_power.append(st.align_trials_from_blocks(block_power, valid_blocks, window=window, ignore_nan_trials='')[0])
         lfp_bands_power = xr.concat(lfp_bands_power, dim=pd.Index(wave_bands, name='wave_band'), combine_attrs='drop_conflicts')
 
         if filter_instantaneous_power:
-            block_filt = ps.bandpass_filter_blocks(lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time)
-            aligned_lfp = st.align_trials_from_blocks(block_filt.filtered, valid_blocks, window=window, ignore_nan_trials='')[0]
+            block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
+                lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
+            aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
         lfp_power_dss[stim] = xr.Dataset(
             data_vars = dict(
                 instantaneous_power = instantaneous_power(aligned_lfp),

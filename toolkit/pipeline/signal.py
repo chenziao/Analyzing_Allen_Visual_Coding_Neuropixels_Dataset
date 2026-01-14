@@ -217,6 +217,9 @@ def bandpass_filter_blocks(
     if concat:
         filtered_blocks = xr.concat(filtered_blocks, dim=time_dim, combine_attrs='override')
         filtered_blocks.attrs['extend_time'] = extend_time
+    else:
+        for da in filtered_blocks:
+            da.attrs['extend_time'] = extend_time
     return filtered_blocks
 
 
