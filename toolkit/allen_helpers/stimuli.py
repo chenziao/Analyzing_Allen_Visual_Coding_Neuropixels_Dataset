@@ -152,18 +152,40 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
     """Extract presentations in natural movies stimulus type"""
     presentations = stimulus_presentations[stimulus_presentations['stimulus_name'] == stimulus_name]
     frame_ids = presentations['stimulus_condition_id'].unique()
+    presentation_increment = frame_ids.size
 
-    presentations_times = np.column_stack([
-        presentations[presentations['stimulus_condition_id'] == frame_ids[0]]['start_time'].values,
-        presentations[presentations['stimulus_condition_id'] == frame_ids[-1]]['stop_time'].values,
-    ])
+    start_idx = np.nonzero(presentations['stimulus_condition_id'].values == frame_ids[0])[0]
+    stop_idx = np.nonzero(presentations['stimulus_condition_id'].values == frame_ids[-1])[0]
+    start_times = presentations['start_time'].values[start_idx]
+    stop_times = presentations['stop_time'].values[stop_idx]
+    # Pair monotonic start/stop times where stop > start
+    presentations_times = []
+    presentation_idx = []
+    i, j = 0, 0
+    while i < start_times.size and j < stop_times.size:
+        if stop_times[j] > start_times[i]:
+            if i + 1 < start_times.size and start_times[i + 1] <stop_times[j]:  # not this start time
+                i += 1  # try the next start time
+            else:
+                presentations_times.append([start_times[i], stop_times[j]])
+                presentation_idx.append([start_idx[i], stop_idx[j] + 1])
+                i += 1
+                j += 1
+        else:
+            j += 1
+    presentations_times = np.array(presentations_times)
+    presentation_idx = np.array(presentation_idx)  # slice indices of each trial
+    # check missing presentations by presentation_increment
+    idx = np.nonzero(presentation_idx[:, 1] - presentation_idx[:, 0] == presentation_increment)[0]
+    presentations_times = presentations_times[idx]
+    presentation_idx = presentation_idx[idx]
     stimulus_trials = StimulusTrials(
-        presentations = presentations,
-        ids = presentations[presentations['stimulus_condition_id'] == frame_ids[0]].index.values,
+        presentations = presentations.iloc[np.concatenate([np.arange(i, j) for i, j in presentation_idx])],
+        ids = presentations.iloc[presentation_idx[:, 0]].index.values,
         times = presentations_times[:, 0],
         duration = np.median(np.diff(presentations_times, axis=1)),
         gap_duration = np.min(presentations_times[1:, 0] - presentations_times[:-1, 1]),
-        presentation_increment = int(np.round(len(presentations) / len(presentations_times)))
+        presentation_increment = presentation_increment
     )
     return stimulus_trials
 
@@ -416,7 +438,7 @@ def choose_trials(
             raise ValueError("Boolean indices must have the same size as the number of trials")
         trial_idx = np.nonzero(trial_ids)[0]
     else:  # if not boolean indices, use it as presentation ids
-        trial_idx = stimulus_trials.presentations.index.get_indexer(trial_ids)
+        trial_idx = pd.Index(stimulus_trials.ids).get_indexer(trial_ids)
     valid_trials = copy(stimulus_trials)
     valid_trials.ids = valid_trials.ids[trial_idx]
     valid_trials.times = valid_trials.times[trial_idx]
