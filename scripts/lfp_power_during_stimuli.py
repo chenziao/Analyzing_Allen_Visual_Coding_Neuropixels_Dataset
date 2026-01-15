@@ -119,7 +119,7 @@ def lfp_power_during_stimuli(
     # Get LFP groups
     lfp_groups, _ = ps.get_lfp_channel_groups(session_dir,
         probe_info['central_channels'], probe_id=probe_info['probe_id'], width=group_width)
-
+    session_dir.clear_lfp_cache()  # clear to avoid memory leak
 
     #################### Analyze data ####################
     lfp_power_dss = {}
