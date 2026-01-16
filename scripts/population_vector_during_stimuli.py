@@ -170,7 +170,6 @@ def population_vector_during_stimuli(
     if filter_orientation:
         conditions = conditions.sel(orientation=preferred_orientation)
     cond_presentation_id = {c: cond_presentation_id[c] for c in conditions.values.ravel()}
-    valid_presentations = np.sort(np.concatenate(list(cond_presentation_id.values())))
 
     # Load LFP power
     lfp_power_dss = session_dir.load_stimulus_lfp_power()
@@ -179,7 +178,9 @@ def population_vector_during_stimuli(
     # Update valid presentations given available presentations in LFP data (without NaNs)
     stimulus_trials[dg_stim] = st.choose_trials(stimulus_trials[dg_stim], lfp_power_dss[dg_stim].presentation_id)
     # Get valid trials with filtered conditions
-    valid_presentations = np.intersect1d(valid_presentations, lfp_power_dss[dg_stim].presentation_id)
+    for c in list(cond_presentation_id):
+        cond_presentation_id[c] = np.intersect1d(cond_presentation_id[c], lfp_power_dss[dg_stim].presentation_id)
+    valid_presentations = np.sort(np.concatenate(list(cond_presentation_id.values())))
     lfp_power_dss[dg_stim] = lfp_power_dss[dg_stim].sel(presentation_id=valid_presentations)
 
     # Load units info from all sessions
@@ -438,6 +439,7 @@ def population_vector_during_stimuli(
     import matplotlib.pyplot as plt
     from toolkit.plots.plots import plot_multicolor_line
     from toolkit.plots.colors import VISP_LAYER_COLORS_DICT
+    from collections import defaultdict
 
     fig_dir = FIGURE_DIR / "population_vector"
     config_dir = fig_dir / config_name
@@ -460,6 +462,7 @@ def population_vector_during_stimuli(
     unit_layer = units_info['layer_acronym'].values
     layer_boundary_idx = np.nonzero(unit_layer[:-1] != unit_layer[1:])[0]
     layer_boundary_idx = np.hstack([-1, layer_boundary_idx, unit_layer.size - 1])
+    layer_colors = defaultdict(lambda: 'gray', VISP_LAYER_COLORS_DICT)  # if outside VISP, use gray
     is_RS = units_info['unit_type'].values == 'RS'
     positions = np.arange(n_all_units)
     boundary_gap = 0.1
@@ -472,12 +475,12 @@ def population_vector_during_stimuli(
         showmeans=True, meanline=True, showfliers=False, showcaps=False,
         meanprops={'linestyle': '-'}, whiskerprops={'color':'none'}, boxprops={'color': 'blue'})
     for i in layer_boundary_idx[:-1]:
-        clr = VISP_LAYER_COLORS_DICT[unit_layer[i + 1]]
+        clr = layer_colors[unit_layer[i + 1]]
         ax.axvline(i + 0.5 + boundary_gap, linestyle='--', color=clr)
         ax.annotate(unit_layer[i + 1], xy=(i + 0.5 + boundary_gap, ax.get_ylim()[1]),
             xytext=(5, -5), textcoords='offset points', ha='left', va='top', color=clr)
     for i in layer_boundary_idx[1:]:
-        ax.axvline(i + 0.5 - boundary_gap, linestyle='--', color=VISP_LAYER_COLORS_DICT[unit_layer[i]])
+        ax.axvline(i + 0.5 - boundary_gap, linestyle='--', color=layer_colors[unit_layer[i]])
     ax.set_xticks(positions, labels=units_info['unit_type'], rotation=75)
     for lb in ax.get_xticklabels():
         lb.set_color('tab:blue' if lb.get_text() == 'RS' else 'tab:red')
