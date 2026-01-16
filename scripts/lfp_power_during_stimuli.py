@@ -128,9 +128,8 @@ def lfp_power_during_stimuli(
     stim = drifting_gratings_stimuli[0]  # first drifting grating stimulus
     stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
     conditions = st.presentation_conditions(stimulus_trials.presentations)
-    window = (drifting_gratings_window[0], stimulus_trials.duration + drifting_gratings_window[1])
-    aligned_lfp, valid_trials = st.align_trials(
-        lfp_groups, stimulus_trials, window=window, ignore_nan_trials='any')
+    valid_window = (-extend_time - 0.1, stimulus_trials.duration + extend_time + 0.1)  # for checking nan value trials
+    valid_trials = st.align_trials(lfp_groups, stimulus_trials, window=valid_window, ignore_nan_trials='any')[1]
 
     if valid_trials is None:
         valid_trials = stimulus_trials
@@ -142,6 +141,7 @@ def lfp_power_during_stimuli(
         conditions = (conditions[0], cond_presentation_id)
     valid_blocks = st.get_stimulus_blocks(valid_trials)
 
+    window = (drifting_gratings_window[0], stimulus_trials.duration + drifting_gratings_window[1])
     lfp_bands_power = []
     for wave_band in wave_bands:
         block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
@@ -159,6 +159,8 @@ def lfp_power_during_stimuli(
         block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
             lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
         aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
+    else:
+        aligned_lfp = st.align_trials(lfp_groups, valid_trials, window=window, ignore_nan_trials='')[0]
     lfp_power_dss[stim] = xr.Dataset(
         data_vars = dict(
             instantaneous_power = instantaneous_power(aligned_lfp),
@@ -170,13 +172,14 @@ def lfp_power_during_stimuli(
     # Natural movies
     for stim in natural_movies_stimuli:
         stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-        window = (natural_movies_window[0], stimulus_trials.duration + natural_movies_window[1])
-        aligned_lfp, valid_blocks = st.align_trials_from_blocks(
-            lfp_groups, st.get_stimulus_blocks(stimulus_trials), window=window, ignore_nan_trials='any')
+        valid_window = (-extend_time - 0.1, stimulus_trials.duration + extend_time + 0.1)  # for checking nan value trials
+        valid_blocks = st.align_trials_from_blocks(lfp_groups,
+            st.get_stimulus_blocks(stimulus_trials), window=valid_window, ignore_nan_trials='any')[1]
         if not valid_blocks:
             print(f"Warning: All trials are dropped by NaN values in {stim}.")
             continue
 
+        window = (natural_movies_window[0], stimulus_trials.duration + natural_movies_window[1])
         lfp_bands_power = []
         for wave_band in wave_bands:
             block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
@@ -194,6 +197,8 @@ def lfp_power_during_stimuli(
             block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
                 lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
             aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
+        else:
+            aligned_lfp = st.align_trials_from_blocks(lfp_groups, valid_blocks, window=window, ignore_nan_trials='')[0]
         lfp_power_dss[stim] = xr.Dataset(
             data_vars = dict(
                 instantaneous_power = instantaneous_power(aligned_lfp),
