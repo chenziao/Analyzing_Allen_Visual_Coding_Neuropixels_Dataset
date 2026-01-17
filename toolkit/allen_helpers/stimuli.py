@@ -164,13 +164,12 @@ def get_movie_trials(stimulus_presentations : pd.DataFrame, stimulus_name : str 
     i, j = 0, 0
     while i < start_times.size and j < stop_times.size:
         if stop_times[j] > start_times[i]:
-            if i + 1 < start_times.size and start_times[i + 1] <stop_times[j]:  # not this start time
-                i += 1  # try the next start time
-            else:
+            if i + 1 >= start_times.size or start_times[i + 1] >= stop_times[j]:
+                # this start time is the last start time for this stop time
                 presentations_times.append([start_times[i], stop_times[j]])
                 presentation_idx.append([start_idx[i], stop_idx[j] + 1])
-                i += 1
                 j += 1
+            i += 1
         else:
             j += 1
     presentations_times = np.array(presentations_times)

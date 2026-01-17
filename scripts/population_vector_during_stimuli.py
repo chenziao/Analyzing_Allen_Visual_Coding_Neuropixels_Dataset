@@ -176,12 +176,17 @@ def population_vector_during_stimuli(
     wave_bands = lfp_power_dss[dg_stim].wave_band.values
 
     # Update valid presentations given available presentations in LFP data (without NaNs)
-    stimulus_trials[dg_stim] = st.choose_trials(stimulus_trials[dg_stim], lfp_power_dss[dg_stim].presentation_id)
+    valid_presentations = {}
+    for stim in drifting_gratings_stimuli + natural_movies_stimuli:
+        stimulus_trials[stim] = st.choose_trials(stimulus_trials[stim], lfp_power_dss[stim].presentation_id)
+        # Get valid presentations
+        valid_presentations[stim] = stimulus_trials[stim].ids  # same as lfp_power_dss[stim].presentation_id
+
     # Get valid trials with filtered conditions
     for c in list(cond_presentation_id):
         cond_presentation_id[c] = np.intersect1d(cond_presentation_id[c], lfp_power_dss[dg_stim].presentation_id)
-    valid_presentations = np.sort(np.concatenate(list(cond_presentation_id.values())))
-    lfp_power_dss[dg_stim] = lfp_power_dss[dg_stim].sel(presentation_id=valid_presentations)
+    valid_presentations[dg_stim] = np.sort(np.concatenate(list(cond_presentation_id.values())))
+    lfp_power_dss[dg_stim] = lfp_power_dss[dg_stim].sel(presentation_id=valid_presentations[dg_stim])
 
     # Load units info from all sessions
     units_info = FILES.load('all_units_info')
@@ -217,8 +222,10 @@ def population_vector_during_stimuli(
             spk_counts.coords[time_dim] = bin_centers
             spk_counts = (spk_counts / bin_width).rename('spike_rate')  # convert to firing rate
             spk_counts = spk_counts.assign_attrs(bin_width=bin_width, fs=1 / bin_width, unit='Hz')
-            units_spk_rate[stim] = spk_counts
             session_dir.save_units_spike_rate({stim: spk_counts})
+
+        # choose valid presentations
+        units_spk_rate[stim] = spk_counts.sel(stimulus_presentation_id=valid_presentations[stim])
 
         # average over trials
         if stim in drifting_gratings_stimuli:
@@ -228,7 +235,6 @@ def population_vector_during_stimuli(
                     for i in cond_presentation_id.values()],
                 dim=conditions.stack(condition=st.CONDITION_TYPES)
             ).assign_attrs(spk_counts.attrs)
-            units_spk_rate[stim] = spk_counts.sel(stimulus_presentation_id=valid_presentations)
         else:
             units_frs[stim] = spk_counts.mean(dim=presentation_dim).assign_attrs(spk_counts.attrs)
 
