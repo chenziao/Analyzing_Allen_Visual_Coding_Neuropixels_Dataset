@@ -212,3 +212,31 @@ def statistic_in_grid(
             if hist_counts[idx]:
                 stat[idx] = stat_method(x[idx_in_grid[idx]])
     return stats, hist_counts
+
+
+def range_by_iqr(X : ArrayLike, n_iqr : float | list[float] = 1.5, axis : int | None = None) -> NDArray[float]:
+    """Value range limited by outliers in term of multiple of interquartile
+    
+    Parameters
+    ----------
+    X : ArrayLike
+        Data array. Array is flattened to get the quantiles if it is not 1-d array.
+    n_iqr : float | list[float]
+        Multiple of interquartile to limit the lower and upper value range.
+        If a single value, the same value is used for both lower and upper value range.
+    axis : int | None
+        Axis along which to calculate the value range. If None, the value range is calculated for the entire array.
+
+    Returns
+    -------
+    vlim : NDArray[float]
+        Value range limited by outliers in term of multiple of interquartile. Shape (2, ...).
+        The first axis of the result corresponds to the lower and upper value range.
+        The other axes are the axes that remain after the reduction of `axis`.
+    """
+    X = np.asarray(X)
+    n_iqr = np.broadcast_to(n_iqr, 2)
+    q1, q3 = np.nanquantile(X, [0.25, 0.75], axis=axis)
+    r1, r3 = np.tensordot(n_iqr, q3 - q1, axes=0)  # like outer product
+    vlim = np.fmax(np.nanmin(X, axis=axis), q1 - r1), np.fmin(np.nanmax(X, axis=axis), q3 + r3)
+    return np.stack(vlim, axis=0)

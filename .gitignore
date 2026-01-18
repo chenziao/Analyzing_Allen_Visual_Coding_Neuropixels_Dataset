@@ -2,6 +2,7 @@ __pycache__/
 .ipynb_checkpoints/
 x86_64/
 .conda-auto-env
+.vscode/
 *.dll
 *.o
 *.c

@@ -27,6 +27,20 @@ SAVE_FIGURE = OUTPUT_CONFIG['save_figure']
 FIGURE_FORMAT = ['.' + ext.lstrip('.') for ext in OUTPUT_CONFIG['figure_format']]
 
 
+def format_text(s : str, format : str = 'capitalize') -> str:
+    """Format text for display. Replay '_' with space and apply format method to the text.
+
+    Parameters
+    ----------
+    s : str
+        Text to format.
+    format : str
+        Format method to apply to the text.
+        Supported methods: 'capitalize', 'title', 'upper', 'lower'.
+    """
+    return getattr(str, format)(str(s).replace('_', ' '))
+
+
 def save_figure(
     fig_dir : Path | str,
     figs : plt.Figure | dict[str, plt.Figure],

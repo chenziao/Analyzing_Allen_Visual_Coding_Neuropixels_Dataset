@@ -141,9 +141,9 @@ def population_vector_during_stimuli(
     drifting_gratings_stimuli = st.STIMULUS_CATEGORIES[session_type]['drifting_gratings'][:1]
     natural_movies_stimuli = st.STIMULUS_CATEGORIES[session_type]['natural_movies']
 
-    preferred_orientation = session_dir.load_preferred_orientations().sel(
-        layer=[GLOBAL_SETTINGS['layer_of_interest']]).values
     layer_of_interest = GLOBAL_SETTINGS['layer_of_interest']
+    preferred_orientation = session_dir.load_preferred_orientations().sel(
+        layer=[layer_of_interest]).values
 
     #################### Load data and parameters ####################
     # Select combination of stimuli
