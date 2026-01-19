@@ -25,6 +25,7 @@ class Parameter():
     name: str
     default: Any
     type: type | str = None
+    list_type: type | str = None
     help: str = ""
 
     def __str__(self) -> str:
@@ -110,16 +111,21 @@ class BatchProcessArgumentParser():
             help="Disable logging to the log file."
         )
 
+    @staticmethod
+    def get_arg_type(arg_type: type | str = None, default: Any = '') -> type | str:
+        """Get the argument type for the parameter, if not provided, infer from default value."""
+        if arg_type is None:
+            arg_type = type(default)
+        elif isinstance(arg_type, str):
+            arg_type = eval(arg_type)
+        return arg_type
+
     def add_parameter_to_parser(self):
         """Add parameters to the argument parser."""
         parser = self.parser
         for param, default in self.default_parameters.items():
             parameter = self.parameters.get(param)
-            arg_type = parameter.type
-            if arg_type is None:
-                arg_type = type(default)
-            elif isinstance(arg_type, str):
-                arg_type = eval(arg_type)
+            arg_type = self.get_arg_type(parameter.type, default)
             help = str(parameter)  # Get help text for the parameter
 
             match arg_type.__name__:
@@ -129,8 +135,10 @@ class BatchProcessArgumentParser():
                     group.add_argument(f'--no-{param}', action='store_false', dest=param, help=f"Disable {param}")
                     parser.set_defaults(**{param: default})
                 case 'list':
+                    list_default = default[0] if default else 0.  # default type to float for list input
+                    list_type = self.get_arg_type(parameter.list_type, list_default)
                     parser.add_argument(
-                        f'--{param}', type=str, nargs='+', default=default,
+                        f'--{param}', type=list_type, nargs='+', default=default,
                         help=f"{help} Provide list input as space-separated values."
                     )
                 case _:

@@ -79,6 +79,7 @@ PARAMETERS = dict(
     n_pc_range = dict(
         default = [3, 6],
         type = list,
+        list_type = int,
         help = "Range of number of principal components to consider."
     )
 )

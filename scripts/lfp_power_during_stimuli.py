@@ -22,6 +22,7 @@ PARAMETERS = dict(
     instantaneous_band = dict(
         default = None,
         type = list,
+        list_type = float,
         help = "Frequency band for instantaneous power in Hz. "
             "If empty, instantaneous power will be calculated in all frequencies. "
             "If not specified, the instantaneous band will be loaded from the global settings."
