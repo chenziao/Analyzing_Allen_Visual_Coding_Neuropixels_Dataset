@@ -131,8 +131,9 @@ def population_vector_during_stimuli(
     #################### Get session and load data ####################
     session_dir = SessionDirectory(session_id)
 
-    if not session_dir.has_lfp_data:
-        raise ValueError(f"Session {session_id} has no LFP data")
+    if not session_dir.has_lfp_data:  # Skip session if it has no LFP data
+        print(f"Session {session_id} has no LFP data. Skipping...")
+        return
 
     session = session_dir.session
     stimulus_presentations = session.stimulus_presentations
