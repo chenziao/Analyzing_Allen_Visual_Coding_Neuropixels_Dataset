@@ -470,8 +470,22 @@ class SessionDirectory:
         return csd_dss
 
     # Stimulus LFP power
+    def stimulus_lfp_instantaneous_power(self, stimulus_name : str, instantaneous_band : list[float, float] | None = None) -> Path:
+        if instantaneous_band is None:
+            instant_band_str = 'all'
+        else:
+            instant_band_str = f'{instantaneous_band[0]:.3g}-{instantaneous_band[1]:.3g}Hz'
+        return self.session_dir / f'{stimulus_name}_lfp_power_{instant_band_str}.nc'
+
     def stimulus_lfp_power(self, stimulus_name : str) -> Path:
         return self.session_dir / f'{stimulus_name}_lfp_power.nc'
+
+    def save_stimulus_lfp_instantaneous_power(
+        self, instantaneous_power_das : dict[str, xr.DataArray],
+        instantaneous_band : list[float, float] | None = None
+    ) -> None:
+        for stim, da in instantaneous_power_das.items():
+            da.to_netcdf(self.stimulus_lfp_instantaneous_power(stim, instantaneous_band))
 
     def save_stimulus_lfp_power(self, lfp_power_dss : dict[str, xr.Dataset]) -> None:
         for stim, ds in lfp_power_dss.items():
@@ -481,6 +495,16 @@ class SessionDirectory:
         lfp_power_files = list(self.session_dir.glob("*_lfp_power.nc"))
         stimulus_names = [f.stem.removesuffix('_lfp_power') for f in lfp_power_files]
         lfp_power_dss = {stim: xr.load_dataset(f) for stim, f in zip(stimulus_names, lfp_power_files)}
+        return lfp_power_dss
+
+    def load_stimulus_lfp_power_combined(self, instantaneous_band : list[float, float] | None = None) -> dict[str, xr.DataArray]:
+        lfp_power_dss = self.load_stimulus_lfp_power()
+        for stim in list(lfp_power_dss):  # add instantaneous power to the dataset
+            file = self.stimulus_lfp_instantaneous_power(stim, instantaneous_band)
+            if not file.exists():
+                raise FileNotFoundError(f"Instantaneous power file '{file.stem}' not found")
+            da = xr.load_dataarray(file)
+            lfp_power_dss[stim]['instantaneous_power'] = da
         return lfp_power_dss
 
     # Units information

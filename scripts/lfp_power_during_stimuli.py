@@ -13,6 +13,19 @@ import toolkit.pipeline.signal as ps
 
 
 PARAMETERS = dict(
+    calculate_band_power = dict(
+        default = True,
+        type = bool,
+        help = "Whether to calculate LFP power in frequency bands. "
+            "If not, only instantaneous power will be calculated."
+    ),
+    instantaneous_band = dict(
+        default = None,
+        type = list,
+        help = "Frequency band for instantaneous power in Hz. "
+            "If empty, instantaneous power will be calculated in all frequencies. "
+            "If not specified, the instantaneous band will be loaded from the global settings."
+    ),
     group_width = dict(
         default = 1,
         type = int,
@@ -22,11 +35,6 @@ PARAMETERS = dict(
         default = 1.0,
         type = float,
         help = "Extend time at the start and end of each block to avoid boundary effect for filtering."
-    ),
-    filter_instantaneous_power = dict(
-        default = True,
-        type = bool,
-        help = "Whether to filter before calculating instantaneous power."
     ),
     drifting_gratings_window = dict(
         default = [-0.5, 0.5],
@@ -57,9 +65,10 @@ def find_band_in_layers(bands_ds, layer_of_interest):
 
 def lfp_power_during_stimuli(
     session_id: int,
+    calculate_band_power: bool = True,
+    instantaneous_band: list[float, float] = None,
     group_width: int = 1,
     extend_time: float = 1.0,
-    filter_instantaneous_power: bool = True,
     drifting_gratings_window: list[float, float] = [-0.5, 0.5],
     natural_movies_window: list[float, float] = [0., 0.],
 ) -> None:
@@ -89,32 +98,36 @@ def lfp_power_during_stimuli(
     wave_bands = ['beta', 'gamma']
     bands_of_interest = FILES.load('bands_of_interest')
     layer_of_interest = GLOBAL_SETTINGS['layer_of_interest']
-    instantaneous_band = GLOBAL_SETTINGS['instantaneous_band']
+    if instantaneous_band is None:  # default: load instantaneous band from global settings
+        instantaneous_band = GLOBAL_SETTINGS['instantaneous_band']
+    elif not instantaneous_band:  # if empty, calculate instantaneous power in all frequencies
+        instantaneous_band = None
 
     # Get frequency bands of interest
-    if session_id in bands_of_interest.session_id:
-        freq_bands = bands_of_interest.sel(wave_band=wave_bands, session_id=session_id)
-    else:
-        print("Warning: Bands of interest not found in the PSD of this session. "
-            f"Trying to find them in layers other than the layer of interest '{layer_of_interest}'.")
-        bands_ds = session_dir.load_wave_bands()
-        beta_stim = drifting_gratings_stimuli[0] + '_filtered'
-        gamma_stim = natural_movies_stimuli[0]
-        beta_band = find_band_in_layers(bands_ds.sel(stimulus=beta_stim, wave_band='beta'), layer_of_interest)
-        gamma_band = find_band_in_layers(bands_ds.sel(stimulus=gamma_stim, wave_band='gamma'), layer_of_interest)
-        if beta_band is None or gamma_band is None:
-            average_wave_bands = FILES.load('average_wave_bands', session_type=session_type, session_set='selected_sessions')
-            if beta_band is None:
-                print("Beta band not found in the session. Trying to find the average bands from selected sessions.")
-                beta_band = find_band_in_layers(average_wave_bands.sel(stimulus=beta_stim, wave_band='beta'), layer_of_interest)
+    if calculate_band_power:
+        if session_id in bands_of_interest.session_id:
+            freq_bands = bands_of_interest.sel(wave_band=wave_bands, session_id=session_id)
+        else:
+            print("Warning: Bands of interest not found in the PSD of this session. "
+                f"Trying to find them in layers other than the layer of interest '{layer_of_interest}'.")
+            bands_ds = session_dir.load_wave_bands()
+            beta_stim = drifting_gratings_stimuli[0] + '_filtered'
+            gamma_stim = natural_movies_stimuli[0]
+            beta_band = find_band_in_layers(bands_ds.sel(stimulus=beta_stim, wave_band='beta'), layer_of_interest)
+            gamma_band = find_band_in_layers(bands_ds.sel(stimulus=gamma_stim, wave_band='gamma'), layer_of_interest)
+            if beta_band is None or gamma_band is None:
+                average_wave_bands = FILES.load('average_wave_bands', session_type=session_type, session_set='selected_sessions')
                 if beta_band is None:
-                    raise ValueError("No beta band found.")
-            if gamma_band is None:
-                print("Gamma band not found in the session. Trying to find the average bands from selected sessions.")
-                gamma_band = find_band_in_layers(average_wave_bands.sel(stimulus=gamma_stim, wave_band='gamma'), layer_of_interest)
+                    print("Beta band not found in the session. Trying to find the average bands from selected sessions.")
+                    beta_band = find_band_in_layers(average_wave_bands.sel(stimulus=beta_stim, wave_band='beta'), layer_of_interest)
+                    if beta_band is None:
+                        raise ValueError("No beta band found.")
                 if gamma_band is None:
-                    raise ValueError("No gamma band found.")
-        freq_bands = xr.concat([beta_band, gamma_band], dim='wave_band')
+                    print("Gamma band not found in the session. Trying to find the average bands from selected sessions.")
+                    gamma_band = find_band_in_layers(average_wave_bands.sel(stimulus=gamma_stim, wave_band='gamma'), layer_of_interest)
+                    if gamma_band is None:
+                        raise ValueError("No gamma band found.")
+            freq_bands = xr.concat([beta_band, gamma_band], dim='wave_band')
 
     # Get LFP groups
     lfp_groups, _ = ps.get_lfp_channel_groups(session_dir,
@@ -123,6 +136,7 @@ def lfp_power_during_stimuli(
 
     #################### Analyze data ####################
     lfp_power_dss = {}
+    instantaneous_power_das = {}
 
     # Drifting gratings
     stim = drifting_gratings_stimuli[0]  # first drifting grating stimulus
@@ -142,44 +156,7 @@ def lfp_power_during_stimuli(
     valid_blocks = st.get_stimulus_blocks(valid_trials)
 
     window = (drifting_gratings_window[0], stimulus_trials.duration + drifting_gratings_window[1])
-    lfp_bands_power = []
-    for wave_band in wave_bands:
-        block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
-            lfp_groups, valid_blocks,
-            freq_bands.sel(wave_band=wave_band).values,
-            extend_time=extend_time,
-            include_filtered=False,
-            include_amplitude=True,
-            concat=False
-        )]
-        lfp_bands_power.append(st.align_trials_from_blocks(block_power, valid_blocks, window=window, ignore_nan_trials='')[0])
-    lfp_bands_power = xr.concat(lfp_bands_power, dim=pd.Index(wave_bands, name='wave_band'), combine_attrs='drop_conflicts')
-
-    if filter_instantaneous_power:
-        block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
-            lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
-        aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
-    else:
-        aligned_lfp = st.align_trials(lfp_groups, valid_trials, window=window, ignore_nan_trials='')[0]
-    lfp_power_dss[stim] = xr.Dataset(
-        data_vars = dict(
-            instantaneous_power = instantaneous_power(aligned_lfp),
-            band_power = lfp_bands_power,
-            freq_bands = freq_bands,
-        )
-    )
-
-    # Natural movies
-    for stim in natural_movies_stimuli:
-        stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
-        valid_window = (-extend_time - 0.1, stimulus_trials.duration + extend_time + 0.1)  # for checking nan value trials
-        valid_blocks = st.align_trials_from_blocks(lfp_groups,
-            st.get_stimulus_blocks(stimulus_trials), window=valid_window, ignore_nan_trials='any')[1]
-        if not valid_blocks:
-            print(f"Warning: All trials are dropped by NaN values in {stim}.")
-            continue
-
-        window = (natural_movies_window[0], stimulus_trials.duration + natural_movies_window[1])
+    if calculate_band_power:
         lfp_bands_power = []
         for wave_band in wave_bands:
             block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
@@ -192,24 +169,55 @@ def lfp_power_during_stimuli(
             )]
             lfp_bands_power.append(st.align_trials_from_blocks(block_power, valid_blocks, window=window, ignore_nan_trials='')[0])
         lfp_bands_power = xr.concat(lfp_bands_power, dim=pd.Index(wave_bands, name='wave_band'), combine_attrs='drop_conflicts')
+        lfp_power_dss[stim] = xr.Dataset(dict(band_power=lfp_bands_power, freq_bands=freq_bands))
 
-        if filter_instantaneous_power:
+    if instantaneous_band is None:  # calculate instantaneous power in all frequencies
+        aligned_lfp = st.align_trials(lfp_groups, valid_trials, window=window, ignore_nan_trials='')[0]
+    else:  # calculate instantaneous power in a specific frequency band
+        block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
+            lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
+        aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
+    instantaneous_power_das[stim] = instantaneous_power(aligned_lfp).assign_attrs(band=instantaneous_band)
+
+    # Natural movies
+    for stim in natural_movies_stimuli:
+        stimulus_trials = st.get_stimulus_trials(stimulus_presentations, stim)
+        valid_window = (-extend_time - 0.1, stimulus_trials.duration + extend_time + 0.1)  # for checking nan value trials
+        valid_blocks = st.align_trials_from_blocks(lfp_groups,
+            st.get_stimulus_blocks(stimulus_trials), window=valid_window, ignore_nan_trials='any')[1]
+        if not valid_blocks:
+            print(f"Warning: All trials are dropped by NaN values in {stim}.")
+            continue
+
+        window = (natural_movies_window[0], stimulus_trials.duration + natural_movies_window[1])
+        if calculate_band_power:
+            lfp_bands_power = []
+            for wave_band in wave_bands:
+                block_power = [bandpass_power(x) for x in ps.bandpass_filter_blocks(
+                    lfp_groups, valid_blocks,
+                    freq_bands.sel(wave_band=wave_band).values,
+                    extend_time=extend_time,
+                    include_filtered=False,
+                    include_amplitude=True,
+                    concat=False
+                )]
+                lfp_bands_power.append(st.align_trials_from_blocks(block_power, valid_blocks, window=window, ignore_nan_trials='')[0])
+            lfp_bands_power = xr.concat(lfp_bands_power, dim=pd.Index(wave_bands, name='wave_band'), combine_attrs='drop_conflicts')
+            lfp_power_dss[stim] = xr.Dataset(dict(band_power=lfp_bands_power, freq_bands=freq_bands))
+
+        if instantaneous_band is None:  # calculate instantaneous power in all frequencies
+            aligned_lfp = st.align_trials_from_blocks(lfp_groups, valid_blocks, window=window, ignore_nan_trials='')[0]
+        else:
             block_filt = [x.filtered.assign_attrs(x.attrs) for x in ps.bandpass_filter_blocks(
                 lfp_groups, valid_blocks, instantaneous_band, extend_time=extend_time, concat=False)]
             aligned_lfp = st.align_trials_from_blocks(block_filt, valid_blocks, window=window, ignore_nan_trials='')[0]
-        else:
-            aligned_lfp = st.align_trials_from_blocks(lfp_groups, valid_blocks, window=window, ignore_nan_trials='')[0]
-        lfp_power_dss[stim] = xr.Dataset(
-            data_vars = dict(
-                instantaneous_power = instantaneous_power(aligned_lfp),
-                band_power = lfp_bands_power,
-                freq_bands = freq_bands,
-            )
-        )
+        instantaneous_power_das[stim] = instantaneous_power(aligned_lfp).assign_attrs(band=instantaneous_band)
 
 
     #################### Save data ####################
-    session_dir.save_stimulus_lfp_power(lfp_power_dss)
+    session_dir.save_stimulus_lfp_instantaneous_power(instantaneous_power_das, instantaneous_band)
+    if calculate_band_power:
+        session_dir.save_stimulus_lfp_power(lfp_power_dss)
 
 
 if __name__ == "__main__":

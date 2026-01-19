@@ -144,6 +144,7 @@ def population_vector_during_stimuli(
     layer_of_interest = GLOBAL_SETTINGS['layer_of_interest']
     preferred_orientation = session_dir.load_preferred_orientations().sel(
         layer=[layer_of_interest]).values
+    instantaneous_band = GLOBAL_SETTINGS['instantaneous_band']
 
     #################### Load data and parameters ####################
     # Select combination of stimuli
@@ -172,7 +173,7 @@ def population_vector_during_stimuli(
     cond_presentation_id = {c: cond_presentation_id[c] for c in conditions.values.ravel()}
 
     # Load LFP power
-    lfp_power_dss = session_dir.load_stimulus_lfp_power()
+    lfp_power_dss = session_dir.load_stimulus_lfp_power_combined(instantaneous_band)
     wave_bands = lfp_power_dss[dg_stim].wave_band.values
 
     # Update valid presentations given available presentations in LFP data (without NaNs)
@@ -193,6 +194,13 @@ def population_vector_during_stimuli(
     # Units in current session
     units_info = units_info.loc[units_info['session_id'] == session_id]
     all_units_id = units_info.index.values
+
+    # Determine config name
+    config_name = combine_stimulus_name
+    config_name += '_orient' if filter_orientation else ''
+    config_name += '_RS_units' if select_RS else '_all_units'
+    config_name += '_layer_' + '_'.join(select_layer) if select_layer else '_all_layers'
+    config_name += '_' + config_name_suffix if config_name_suffix else ''
 
     #################### Analyze data ####################
     if sigma == 0:  # If sigma is 0, set to bin width
@@ -280,8 +288,20 @@ def population_vector_during_stimuli(
         unit_idx = unit_idx & units_info['layer_acronym'].isin(select_layer)
 
     units_id = all_units_id[unit_idx]
-    print(f"Number of RS units: {units_id.size}/{all_units_id.size}")
+    n_units = units_id.size
+    print(f"Number of RS units: {n_units}/{all_units_id.size}")
 
+    # Check if selected enough units
+    if n_units <= n_pc_range[0] + 1:
+        session_parameters = dict(
+            soft_normalize_cut=soft_normalize_cut,
+            n_units=n_units
+        )
+        safe_mkdir(FILES.population_vector_dir(config_name))
+        session_dir.save_population_vector_parameters(config_name, session_parameters)
+        raise ValueError(f"Insufficient number of units ({n_units:d}) for PCA analysis.")
+
+    # Compute smoothed and trial-averaged spike rates
     units_smoothed_rate = {}
     units_averaged_rate = {}
     for stim in stimulus_names:
@@ -294,7 +314,6 @@ def population_vector_during_stimuli(
         units_averaged_rate[stim] = units_frs[stim].sel(unit_id=units_id)
 
     # PCA analysis
-    n_units = units_id.size
     n_samples_stim = {}  # total number of trial-averaged time samples per stimulus
     n_trials_stim = {}  # average number of trials per stimulus condition
     for stim in stimulus_names:
@@ -414,16 +433,11 @@ def population_vector_during_stimuli(
 
     session_parameters = dict(
         soft_normalize_cut=soft_normalize_cut,
+        n_units=n_units,
         n_main_pc=n_main_pc,
         n_samples_stim=n_samples_stim,
         n_trials_stim=n_trials_stim
     )
-
-    config_name = combine_stimulus_name
-    config_name += '_orient' if filter_orientation else ''
-    config_name += '_RS_units' if select_RS else '_all_units'
-    config_name += '_layer_' + '_'.join(select_layer) if select_layer else '_all_layers'
-    config_name += '_' + config_name_suffix if config_name_suffix else ''
 
     # Save global parameters (only by main job to avoid race condition)
     safe_mkdir(FILES.population_vector_dir(config_name))
