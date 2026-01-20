@@ -197,13 +197,6 @@ def population_vector_during_stimuli(
     units_info = units_info.loc[units_info['session_id'] == session_id]
     all_units_id = units_info.index.values
 
-    # Determine config name
-    config_name = combine_stimulus_name
-    config_name += '_orient' if filter_orientation else ''
-    config_name += '_RS_units' if select_RS else '_all_units'
-    config_name += '_layer_' + '_'.join(select_layer) if select_layer else '_all_layers'
-    config_name += '_' + config_name_suffix if config_name_suffix else ''
-
     #################### Analyze data ####################
     if sigma == 0:  # If sigma is 0, set to bin width
         sigma = bin_width
@@ -292,6 +285,13 @@ def population_vector_during_stimuli(
     units_id = all_units_id[unit_idx]
     n_units = units_id.size
     print(f"Number of RS units: {n_units}/{all_units_id.size}")
+
+    # Determine config name
+    config_name = combine_stimulus_name
+    config_name += '_orient' if filter_orientation else ''
+    config_name += '_RS_units' if select_RS else '_all_units'
+    config_name += '_layer_' + '_'.join(select_layer) if select_layer else '_all_layers'
+    config_name += '_' + config_name_suffix if config_name_suffix else ''
 
     # Check if selected enough units
     if n_units <= n_pc_range[0] + 1:
