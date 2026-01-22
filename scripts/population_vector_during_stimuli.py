@@ -62,7 +62,7 @@ PARAMETERS = dict(
         help = "Quantile for soft normalization cutoff."
     ),
     select_RS = dict(
-        default = True,
+        default = False,
         type = bool,
         help = "Whether to select only Regular Spiking (RS) units."
     ),
