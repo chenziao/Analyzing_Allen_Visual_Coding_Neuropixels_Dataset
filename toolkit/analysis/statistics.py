@@ -240,3 +240,160 @@ def range_by_iqr(X : ArrayLike, n_iqr : float | list[float] = 1.5, axis : int | 
     r1, r3 = np.tensordot(n_iqr, q3 - q1, axes=0)  # like outer product
     vlim = np.fmax(np.nanmin(X, axis=axis), q1 - r1), np.fmin(np.nanmax(X, axis=axis), q3 + r3)
     return np.stack(vlim, axis=0)
+
+
+def LRA(
+    A : ArrayLike,
+    rank : int = 1,
+    return_UV : bool = False,
+    fill_nan : bool = False,
+    fill_value : float | None = None,
+    **kwargs
+) -> NDArray[float] | tuple[NDArray[float], tuple[NDArray[float], NDArray[float]]]:
+    """Standard Low-Rank Approximation using SVD.
+
+    Parameters
+    ----------
+    A : ArrayLike
+        Matrix to be approximated.
+    rank : int
+        Rank of the low-rank approximation.
+    return_UV : bool
+        Whether to return factors U and V.
+    fill_nan : bool
+        Whether to fill NaN values or ignore them.
+    fill_value : float | None
+        Value to fill when fill_nan is True. If None, the mean of the data is used.
+    **kwargs : dict
+        Additional arguments for method `WLRA` used when NaN values are present and fill_nan is False.
+
+    Returns
+    -------
+    B : NDArray[float]
+        Low-rank approximation of the data.
+    (U, V) : tuple[NDArray[float], NDArray[float]]
+        Low-rank approximation factors (low-rank approximation matrix ~ U @ V.T).
+        Only returned when return_UV is True.
+    """
+    A = np.asarray(A)
+    rank = min(rank, min(A.shape))
+
+    # Find NaNs/Missing data
+    nan_idx = np.isnan(A)
+    has_nan = nan_idx.any()
+    if has_nan and fill_nan:  # fill with the mean
+        A = np.where(nan_idx, np.nanmean(A) if fill_value is None else fill_value, A)
+    
+    if has_nan and not fill_nan:  # ignore NaNs
+        weights = np.where(nan_idx, 0, 1)
+        return WLRA(A, weights=weights, rank=rank, return_UV=return_UV, **kwargs)
+
+    U, s, Vt = np.linalg.svd(A, full_matrices=False)
+    U, s, Vt = U[:, :rank], s[:rank], Vt[:rank, :]
+    B = s * U @ Vt
+
+    if return_UV:
+        # Distribute the "energy" of the singular values evenly between U and V
+        # This helps with numerical stability in the ALS steps
+        s_sqrt = np.sqrt(s)
+        U = s_sqrt * U
+        Vt = s_sqrt[:, None] * Vt
+        return B, (U, Vt.T)
+    else:
+        return B
+
+
+def WLRA(
+    A : ArrayLike,
+    weights : NDArray[float] | None = None,
+    rank : int = 1,
+    return_UV : bool = False,
+    fill_nan : bool = False,
+    fill_value : float | None = None,
+    regularization : float = 1e-6,
+    max_iters : int = 50,
+    rtol : float = 1e-3,
+    verbose : bool = False
+) -> NDArray[float] | tuple[NDArray[float], tuple[NDArray[float], NDArray[float]]]:
+    """Weighted Low-Rank Approximation using Alternating Least Squares (ALS).
+
+    Parameters
+    ----------
+    A : ArrayLike
+        Matrix to be approximated.
+    weights : NDArray[float] | None
+        Weights for the data in matrix. Must be the same shape as `A`.
+        If not provided, weights are equal for all samples.
+    rank : int
+        Rank of the low-rank approximation.
+    return_UV : bool
+        Whether to return factors U and V.
+    fill_nan : bool
+        Whether to fill NaN values or ignore them.
+    fill_value : float | None
+        Value to fill when fill_nan is True. If None, the mean of the data is used.
+    regularization : float
+        Regularization parameter for numerical stability in the ALS steps.
+    max_iters : int
+        Maximum number of iterations for the ALS steps.
+    rtol : float
+        Relative tolerance of error to determine convergence in the ALS steps.
+    verbose : bool
+        Whether to print verbose output during the ALS steps.
+
+    Returns
+    -------
+    B : NDArray[float]
+        Low-rank approximation of the data.
+    (U, V) : tuple[NDArray[float], NDArray[float]]
+        Low-rank approximation factors (low-rank approximation matrix ~ U @ V.T).
+        Only returned when return_UV is True.
+    """
+    A = np.asarray(A)
+    rank = min(rank, min(A.shape))
+
+    weights = np.ones(A.shape) if weights is None else np.fmax(np.asarray(weights), 0)  # non-negative weights
+    if weights.shape != A.shape:
+        raise ValueError("Shape of `weights` must match shape of `A`.")
+    nan_idx = np.isnan(A)
+    weights[nan_idx] = 0  # nan values should be ignored
+    weights = weights / weights.sum()  # normalize weights
+
+    # Initial Guess (Unweighted) ---
+    mask = weights > 0
+    fill_value = np.average(A[mask], weights=weights[mask]) if fill_value is None else fill_value
+    A = np.where(nan_idx, fill_value, A)
+    _, (U, V) = LRA(A, rank=rank, return_UV=True) # get initial factor
+    
+    # Refinement (Weighted ALS)
+    regularization = regularization * np.eye(rank)
+    err = np.inf
+    for it in range(max_iters):
+        # Update rows of U (Fix V).  (V^T W_i V + lambda*I) u_i = V^T W_i A_i
+        for i in range(A.shape[0]):
+            VTW = weights[i, :] * V.T
+            U[i] = np.linalg.solve(VTW @ V + regularization, VTW @ A[i, :])
+        # Update rows of V (Fix U).  (U^T W_j U + lambda*I) v_j = U^T W_j A_j
+        for j in range(A.shape[1]):
+            UTW = weights[:, j] * U.T
+            V[j] = np.linalg.solve(UTW @ U + regularization, UTW @ A[:, j])
+        # Reconstruct
+        B = U @ V.T
+        # Tracking error
+        pre_err = err
+        err = np.sum(weights[mask] * (A[mask] - B[mask]) ** 2)
+        if pre_err - err < rtol * err:
+            if verbose:
+                print(f"LRA: Converged at iteration {it:d}")
+            break
+    else:
+        if verbose:
+            print(f"LRA:Maximum iterations {max_iters:d} reached")
+
+    if not fill_nan:
+        B[nan_idx] = np.nan
+    if return_UV:
+        return B, (U, V)
+    else:
+        return B
+

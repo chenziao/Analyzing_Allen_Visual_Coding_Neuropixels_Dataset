@@ -564,9 +564,9 @@ def heatmap_in_grid(
         The mesh data used in `matplotlib.axes.Axes.pcolormesh`.
         Note that the first dimension is the x-axis, and the second dimension is the y-axis.
     x_bins : ArrayLike | None
-        Bin edges of the x-axis. If not provided, create integer bins.
+        Bin edges of the x-axis. If not provided, create evenly spaced bins from 0 to 1.
     y_bins : ArrayLike | None
-        Bin edges of the y-axis. If not provided, create integer bins.
+        Bin edges of the y-axis. If not provided, create evenly spaced bins from 0 to 1.
     xticks_fmt, yticks_fmt : str | None
         Format string for converting x and y bin edges to tick labels.
         If not provided, use the bin edges values directly as tick labels.
@@ -585,15 +585,15 @@ def heatmap_in_grid(
     ax : Axes
         Axes object with the plot.
     """
-    x_edges = np.arange(C.shape[0] + 1)
-    y_edges = np.arange(C.shape[1] + 1)
+    x_edges = np.linspace(0, 1, C.shape[0] + 1)
+    y_edges = np.linspace(0, 1, C.shape[1] + 1)
     if x_bins is None:
         x_bins = x_edges
     if y_bins is None:
         y_bins = y_edges
     if ax is None:
         _, ax = plt.subplots(1, 1)
-    args = () if even_grid else (x_bins, y_bins)
+    args = (x_edges, y_edges) if even_grid else (x_bins, y_bins)
     pcm = ax.pcolormesh(*args, np.transpose(C, (1, 0)), **pcm_kwargs)
     if even_grid:
         ax.set_xticks(x_edges)
@@ -601,10 +601,12 @@ def heatmap_in_grid(
     else:
         ax.set_xticks(x_bins)
         ax.set_yticks(y_bins)
-    xticklabels = x_bins if xticks_fmt is None else map(xticks_fmt.format, x_bins)
-    yticklabels = y_bins if yticks_fmt is None else map(yticks_fmt.format, y_bins)
-    ax.set_xticklabels(xticklabels)
-    ax.set_yticklabels(yticklabels)
+    if xticks_fmt is None:
+        xticks_fmt = '{:.2g}'
+    if yticks_fmt is None:
+        yticks_fmt = '{:.2g}'
+    ax.set_xticklabels(map(xticks_fmt.format, x_bins))
+    ax.set_yticklabels(map(yticks_fmt.format, y_bins))
     return pcm, ax
 
 
